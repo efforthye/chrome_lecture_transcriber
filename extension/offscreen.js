@@ -2,7 +2,8 @@
 // 영상을 재생할 필요가 없고, 다운로드와 변환이 동시에 진행된다.
 
 const SR = 16000; // Whisper 입력 샘플레이트
-const CHUNK_SEC = 600; // 16kHz 16bit 모노 WAV 10분 ≈ 19MB (API 한도 25MB)
+const CHUNK_SEC = 300; // 16kHz 16bit 모노 WAV 5분 ≈ 9.6MB (API 한도 25MB). 작을수록 한도 걸렸을 때 버리는 업로드가 적다
+const REQUEST_TIMEOUT_MS = 180_000; // 응답 없는 요청은 끊고 다시 시도
 const SEARCH_SEC = 30; // 조각 끝 30초 안에서 가장 조용한 지점에서 자른다
 const HLS_BATCH_SEC = 300; // HLS 세그먼트를 이만큼씩 모아 디코딩
 const FETCH_CONCURRENCY = 6;
@@ -310,6 +311,8 @@ async function produceFile(url, signal, chunker, progress) {
 
 let prevText = '';
 
+const clock = (sec) => new Date(sec * 1000).toISOString().slice(11, 19);
+
 const blockedUntil = new Map(); // 모델 → 한도가 풀리는 시각(ms)
 
 const sleep = (sec, signal) =>
@@ -347,7 +350,14 @@ async function transcribe(chunk, { provider, apiKey, language }, signal) {
     if (prevText) form.append('prompt', prevText.slice(-200));
 
     try {
-      res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body: form, signal });
+      const fallback = model !== models[0] ? ` (${models[0]} 한도 도달 → ${model}로 대체)` : '';
+      toBackground('notice', { message: `${clock(chunk.start)}부터 5분 분량 변환 중…${fallback}` });
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: form,
+        signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+      });
     } catch (e) {
       if (signal.aborted) throw e;
       res = null;
