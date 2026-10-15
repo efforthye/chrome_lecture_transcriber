@@ -17,7 +17,7 @@ const PROVIDERS = {
   openai: { url: 'https://api.openai.com/v1/audio/transcriptions', models: ['whisper-1'] },
 };
 
-let controller = null;
+const controllers = new Map(); // jobId → AbortController
 
 const toBackground = (type, extra = {}) => chrome.runtime.sendMessage({ type, ...extra }).catch(() => {});
 
@@ -309,8 +309,6 @@ async function produceFile(url, signal, chunker, progress) {
 
 // ---------- Whisper ----------
 
-let prevText = '';
-
 const clock = (sec) => new Date(sec * 1000).toISOString().slice(11, 19);
 
 const blockedUntil = new Map(); // '키끝4자리:모델' → 한도가 풀리는 시각(ms)
@@ -325,7 +323,7 @@ const sleep = (sec, signal) =>
 // 키 끝 4자리. 사용량 기록/표시용이며 키 자체는 저장하지 않는다
 const keyTail = (key) => key.slice(-4);
 
-async function transcribe(chunk, { provider, apiKeys, language }, signal) {
+async function transcribe(chunk, { provider, apiKeys, language }, signal, job) {
   const { url, models } = PROVIDERS[provider];
   const wav = toWav(chunk.pcm);
   // (모델, 키) 조합. 좋은 모델을 모든 키에서 먼저 쓰고, 다 막히면 다음 모델로 넘어간다
@@ -343,7 +341,7 @@ async function transcribe(chunk, { provider, apiKeys, language }, signal) {
     if (!slot) {
       const next = Math.min(...usable.map((s) => blockedUntil.get(s.id)));
       const until = new Date(next).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-      toBackground('notice', { message: `모든 키가 무료 사용 한도에 걸려 기다리는 중… ${until}쯤 이어서 변환합니다.` });
+      toBackground('notice', { jobId: job.id, message: `모든 키가 무료 사용 한도에 걸려 기다리는 중… ${until}쯤 이어서 변환합니다.` });
       await sleep(Math.max(1, (next - now) / 1000), signal);
       continue;
     }
@@ -355,11 +353,11 @@ async function transcribe(chunk, { provider, apiKeys, language }, signal) {
     form.append('timestamp_granularities[]', 'segment');
     form.append('temperature', '0');
     if (language !== 'auto') form.append('language', language);
-    if (prevText) form.append('prompt', prevText.slice(-200));
+    if (job.prevText) form.append('prompt', job.prevText.slice(-200));
 
     try {
       const who = apiKeys.length > 1 ? ` · 키 …${keyTail(slot.key)}` : '';
-      toBackground('notice', { message: `${clock(chunk.start)}부터 5분 분량 변환 중… (${slot.model}${who})` });
+      toBackground('notice', { jobId: job.id, message: `${clock(chunk.start)}부터 5분 분량 변환 중… (${slot.model}${who})` });
       res = await fetch(url, {
         method: 'POST',
         headers: { Authorization: `Bearer ${slot.key}` },
@@ -380,12 +378,12 @@ async function transcribe(chunk, { provider, apiKeys, language }, signal) {
       toBackground('error', { message: `키 …${keyTail(slot.key)}가 유효하지 않아 건너뜁니다 (${res.status}).` });
     } else if (!res || res.status >= 500) {
       if (++failures >= 6) break;
-      toBackground('notice', { message: `서버 응답이 없어 다시 시도 중… (${failures}/5)` });
+      toBackground('notice', { jobId: job.id, message: `서버 응답이 없어 다시 시도 중… (${failures}/5)` });
       await sleep(5 * failures, signal);
     } else break;
   }
   const model = slot.model;
-  toBackground('notice', { message: null });
+  toBackground('notice', { jobId: job.id, message: null });
   if (!res) throw new Error('음성인식 API에 연결하지 못했습니다.');
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -399,20 +397,22 @@ async function transcribe(chunk, { provider, apiKeys, language }, signal) {
     .filter((s) => !(s.no_speech_prob > 0.6 && s.avg_logprob < -1))
     .map((s) => ({ start: chunk.start + s.start, end: chunk.start + s.end, text: s.text.trim() }))
     .filter((s) => s.text);
-  if (segments.length) prevText = segments.map((s) => s.text).join(' ');
+  if (segments.length) job.prevText = segments.map((s) => s.text).join(' ');
   return segments;
 }
 
 // ---------- 실행 ----------
 
-async function run({ source, settings }) {
-  controller = new AbortController();
+// 강의 하나를 처리한다. 여러 개가 동시에 돌 수 있고, 메시지마다 jobId를 붙여 보낸다.
+async function run({ jobId, source, settings }) {
+  const controller = new AbortController();
+  controllers.set(jobId, controller);
   const { signal } = controller;
-  prevText = '';
+  const job = { id: jobId, prevText: '' };
   const state = {};
   const progress = (patch) => {
     Object.assign(state, patch);
-    toBackground('progress', { progress: { ...state } });
+    toBackground('progress', { jobId, progress: { ...state } });
   };
 
   // 다운로드와 변환을 동시에 돌린다. 변환이 밀리면 다운로드가 기다린다(메모리 보호).
@@ -455,8 +455,8 @@ async function run({ source, settings }) {
       if (!queue.length) return;
       const chunk = queue.shift();
       notify();
-      const segments = await transcribe(chunk, settings, signal);
-      if (segments.length) toBackground('segments', { segments });
+      const segments = await transcribe(chunk, settings, signal, job);
+      if (segments.length) toBackground('segments', { jobId, segments });
       progress({ transcribedSec: chunk.start + chunk.pcm.length / SR });
     }
   })();
@@ -468,17 +468,20 @@ async function run({ source, settings }) {
     throw e;
   };
   const results = await Promise.allSettled([producer.catch(fail), consumer.catch(fail)]);
+  controllers.delete(jobId);
   const err = results.map((r) => r.reason).find((e) => e && e.name !== 'AbortError');
   if (err) throw err;
+  return signal.aborted;
 }
 
 chrome.runtime.onMessage.addListener((msg) => {
   if (msg.target !== 'offscreen') return;
   if (msg.type === 'run') {
-    run(msg)
-      .catch((e) => toBackground('error', { message: e.message }))
-      .finally(() => toBackground('finished'));
+    run(msg).then(
+      (canceled) => toBackground('job-finished', { jobId: msg.jobId, canceled }),
+      (e) => toBackground('job-finished', { jobId: msg.jobId, error: e.message })
+    );
   } else if (msg.type === 'cancel') {
-    controller?.abort();
+    controllers.get(msg.jobId)?.abort();
   }
 });

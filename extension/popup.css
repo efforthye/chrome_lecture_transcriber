@@ -55,10 +55,6 @@ pre {
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px; font: 12px/1.5 ui-monospace, Menlo, monospace;
 }
 a { color: var(--primary); }
-.bar { position: relative; height: 8px; border-radius: 4px; background: var(--panel); border: 1px solid var(--border); overflow: hidden; }
-.bar div { position: absolute; left: 0; top: 0; bottom: 0; width: 0; transition: width .3s; }
-#barDl { background: var(--border); }
-#barTx { background: var(--primary); }
 [hidden] { display: none !important; }
 .field { margin-top: 8px; color: var(--muted); font-size: 12px; }
 .key-row { display: flex; gap: 6px; margin-top: 4px; }
@@ -81,3 +77,24 @@ button.add { margin-top: 6px; width: 100%; padding: 6px; font-size: 12px; border
 .meter i { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
 .cell.blocked .meter i { background: var(--danger); }
 .usage .note { margin-top: 10px; font-size: 11px; }
+
+/* 강의 목록 */
+.jobs { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.job { padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.job.selected { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
+.job-top { display: flex; align-items: center; gap: 8px; }
+.job-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.job-badge { flex: none; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border); color: var(--muted); font-variant-numeric: tabular-nums; }
+.job-badge.working { background: var(--danger); border-color: var(--danger); color: #fff; }
+.job-badge.done { background: #16a34a; border-color: #16a34a; color: #fff; }
+.job-badge.error { color: var(--danger); border-color: var(--danger); }
+.bar { position: relative; height: 6px; margin-top: 8px; border-radius: 3px; background: var(--panel); border: 1px solid var(--border); overflow: hidden; }
+.bar div { position: absolute; left: 0; top: 0; bottom: 0; transition: width .3s; }
+.bar .dl { background: var(--border); }
+.bar .tx { background: var(--primary); }
+.job-line { margin-top: 4px; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.job-line.err { color: var(--danger); white-space: normal; }
+.job-actions { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.job-actions .job-count { flex: 1; font-size: 11px; color: var(--muted); }
+.job-actions button { flex: none; padding: 3px 10px; font-size: 11px; border-radius: 6px; }
+.job-actions button.danger { color: var(--danger); }

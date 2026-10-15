@@ -5,14 +5,6 @@ const PROVIDERS = {
   openai: { label: 'OpenAI API 키', link: 'https://platform.openai.com/api-keys' },
 };
 
-const STATE_LABEL = { idle: '대기', picking: '영상 선택 중', working: '변환 중' };
-
-const STATE_HINT = {
-  idle: '창을 고르고 시작을 누른 뒤, 그 창에서 영상을 클릭하세요.',
-  picking: '페이지에서 영상 위를 클릭하세요. (Esc로 취소)',
-  working: '영상을 재생하지 않아도 됩니다. 팝업을 닫아도 계속 진행돼요.',
-};
-
 function fmt(sec) {
   const s = Math.max(0, Math.floor(sec));
   const h = String(Math.floor(s / 3600)).padStart(2, '0');
@@ -39,45 +31,147 @@ function cleanSegments(segments) {
 
 const toLines = (segments) => cleanSegments(segments).map((s) => `[${fmt(s.start)}] ${s.text}`);
 
-function renderProgress(state, p) {
-  $('progress').hidden = state !== 'working';
-  if (state !== 'working' || !p) return;
+const JOB_LABEL = { queued: '대기', working: '변환 중', done: '완료', error: '실패', canceled: '중지됨' };
+
+let selectedId = null;
+let lastData = {};
+
+const send = (type, extra = {}) => chrome.runtime.sendMessage({ type, ...extra });
+
+function progressText(p = {}) {
+  const total = p.totalSec || 0;
+  const parts = [];
+  if (p.downloadedSec != null && total) parts.push(`추출 ${fmt(p.downloadedSec)}`);
+  else if (p.downloadedBytes != null) parts.push(`다운로드 ${mb(p.downloadedBytes)}${p.totalBytes ? `/${mb(p.totalBytes)}` : ''}`);
+  else parts.push('영상 정보 불러오는 중…');
+  if (total) parts.push(`변환 ${fmt(p.transcribedSec || 0)} / ${fmt(total)}`);
+  return parts.join(' · ');
+}
+
+function jobCard(job) {
+  const p = job.progress || {};
   const total = p.totalSec || 0;
   const dl = total ? (p.downloadedSec || 0) / total : p.totalBytes ? (p.downloadedBytes || 0) / p.totalBytes : 0;
   const tx = total ? (p.transcribedSec || 0) / total : 0;
-  $('barDl').style.width = `${Math.min(100, dl * 100)}%`;
-  $('barTx').style.width = `${Math.min(100, tx * 100)}%`;
 
-  const parts = [];
-  if (p.downloadedSec != null && total) parts.push(`오디오 추출 ${fmt(p.downloadedSec)} / ${fmt(total)}`);
-  else if (p.downloadedBytes != null)
-    parts.push(`영상 다운로드 ${mb(p.downloadedBytes)}${p.totalBytes ? ` / ${mb(p.totalBytes)}` : ''}`);
-  else parts.push('영상 정보를 불러오는 중…');
-  if (total) parts.push(`변환 ${fmt(p.transcribedSec || 0)} / ${fmt(total)}`);
-  $('progressText').textContent = parts.join(' · ');
+  const card = document.createElement('div');
+  card.className = `job ${job.state}${job.id === selectedId ? ' selected' : ''}`;
+  card.addEventListener('click', () => {
+    selectedId = job.id;
+    render(lastData);
+  });
+
+  const top = document.createElement('div');
+  top.className = 'job-top';
+  const title = document.createElement('span');
+  title.className = 'job-title';
+  title.textContent = job.title || job.url;
+  const badge = document.createElement('span');
+  badge.className = `job-badge ${job.state}`;
+  badge.textContent = job.state === 'working' && total ? `${Math.floor(tx * 100)}%` : JOB_LABEL[job.state];
+  top.append(title, badge);
+  card.append(top);
+
+  if (job.state === 'working') {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    bar.innerHTML = `<div style="width:${Math.min(100, dl * 100)}%" class="dl"></div><div style="width:${Math.min(100, tx * 100)}%" class="tx"></div>`;
+    const line = document.createElement('div');
+    line.className = 'job-line';
+    line.textContent = job.notice || progressText(p);
+    card.append(bar, line);
+  } else if (job.state === 'error') {
+    const line = document.createElement('div');
+    line.className = 'job-line err';
+    line.textContent = job.error;
+    card.append(line);
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'job-actions';
+  const btn = (label, onClick, cls = '') => {
+    const b = document.createElement('button');
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      onClick();
+    });
+    actions.append(b);
+  };
+  const count = document.createElement('span');
+  count.className = 'job-count';
+  count.textContent = job.count ? `${job.count}문장` : '';
+  actions.append(count);
+  if (job.count) btn('.txt', () => downloadJobs([job]));
+  if (job.state === 'working' || job.state === 'queued') btn('중지', () => send('cancel-job', { jobId: job.id }));
+  if ((job.state === 'error' || job.state === 'canceled') && job.source) btn('다시', () => send('retry-job', { jobId: job.id }));
+  btn('삭제', () => {
+    if (job.count && !confirm(`"${job.title}" 스크립트를 지울까요?`)) return;
+    if (selectedId === job.id) selectedId = null;
+    send('remove-job', { jobId: job.id });
+  }, 'danger');
+  card.append(actions);
+  return card;
 }
 
-function render({ status = { state: 'idle' }, session }) {
-  const state = status.state || 'idle';
-  $('state').textContent = STATE_LABEL[state];
-  $('state').classList.toggle('recording', state === 'working');
-  $('hint').textContent = status.notice || STATE_HINT[state];
-  $('start').hidden = state !== 'idle';
-  $('targetRow').hidden = state !== 'idle';
-  $('stop').hidden = state === 'idle';
+async function render(data) {
+  lastData = data;
+  const status = data.status || { state: 'idle' };
+  const jobs = data.jobs || [];
+  const picking = status.state === 'picking';
+  const working = jobs.filter((j) => j.state === 'working').length;
+  const queued = jobs.filter((j) => j.state === 'queued').length;
+
+  $('state').textContent = picking ? '영상 선택 중' : working ? `변환 중 ${working}${queued ? ` · 대기 ${queued}` : ''}` : '대기';
+  $('state').classList.toggle('recording', !!working);
+  $('pick').hidden = picking;
+  $('targetRow').hidden = picking;
+  $('pickStop').hidden = !picking;
+  $('hint').textContent = picking
+    ? '강의 창에서 영상 위를 클릭하세요. (Esc로 취소)'
+    : jobs.length
+      ? '변환 중에도 계속 강의를 추가할 수 있어요. 2개씩 동시에 변환하고 나머지는 차례로 진행돼요.'
+      : '창을 고르고 + 강의 추가를 누른 뒤, 그 창에서 영상을 클릭하세요.';
   $('error').hidden = !status.error;
   $('error').textContent = status.error || '';
-  renderProgress(state, status.progress);
 
-  const segs = session?.segments || [];
-  $('title').textContent = session?.title || '';
-  $('count').textContent = segs.length ? `${segs.length}문장` : '';
-  const pre = $('preview');
-  const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
-  pre.textContent = segs.length ? toLines(segs).join('\n') : '아직 스크립트가 없습니다.';
-  if (atBottom) pre.scrollTop = pre.scrollHeight;
-  $('download').disabled = !segs.length;
-  $('clear').disabled = !segs.length || state !== 'idle';
+  // 최신 강의가 위로
+  const ordered = [...jobs].reverse();
+  if (!jobs.some((j) => j.id === selectedId)) {
+    selectedId = (ordered.find((j) => j.state === 'working') || ordered[0])?.id ?? null;
+  }
+  $('jobs').replaceChildren(...ordered.map(jobCard));
+
+  // 선택한 강의 미리보기 (목록 바로 아래)
+  const job = jobs.find((j) => j.id === selectedId);
+  $('previewBox').hidden = !job;
+  if (job) {
+    const { [`seg:${job.id}`]: segs = [] } = await chrome.storage.local.get(`seg:${job.id}`);
+    $('title').textContent = job.title || '';
+    $('count').textContent = segs.length ? `${segs.length}문장` : '';
+    const pre = $('preview');
+    const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+    pre.textContent = segs.length ? toLines(segs).join('\n') : '아직 스크립트가 없습니다.';
+    if (atBottom) pre.scrollTop = pre.scrollHeight;
+  }
+  $('downloadAll').disabled = !jobs.some((j) => j.state === 'done' && j.count);
+}
+
+const safeName = (s) => (s || 'transcript').replace(/[\\/:*?"<>|]/g, '_').trim();
+
+async function downloadJobs(jobs) {
+  for (const job of jobs) {
+    const key = `seg:${job.id}`;
+    const { [key]: segs = [] } = await chrome.storage.local.get(key);
+    if (!segs.length) continue;
+    const text = [job.title, job.url, '', ...toLines(segs), ''].join('\n');
+    await chrome.downloads.download({
+      url: `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`,
+      filename: `${safeName(job.title)}.txt`,
+      conflictAction: 'uniquify',
+    });
+  }
 }
 
 // Groq 무료 한도 (모델별, 오디오 초). 실제 값은 console.groq.com/settings/limits 기준
@@ -144,8 +238,8 @@ function renderUsage(usage, settings) {
 }
 
 async function refresh() {
-  const data = await chrome.storage.local.get(['status', 'session', 'usage', 'settings']);
-  render(data);
+  const data = await chrome.storage.local.get(['status', 'jobs', 'usage', 'settings']);
+  await render(data);
   renderUsage(data.usage, { provider: 'groq', ...data.settings });
 }
 
@@ -172,7 +266,7 @@ async function loadTargets() {
       return o;
     })
   );
-  $('start').disabled = !items.length;
+  $('pick').disabled = !items.length;
 }
 
 async function init() {
@@ -250,21 +344,19 @@ async function init() {
     save();
   });
 
-  $('start').addEventListener('click', async () => {
+  $('pick').addEventListener('click', async () => {
     await save();
-    const { session } = await chrome.storage.local.get('session');
-    if (session?.segments?.length && !confirm('새로 시작하면 기존 스크립트가 지워집니다. 먼저 다운로드하셨나요?')) return;
-    $('start').disabled = true;
+    $('pick').disabled = true;
     const tab = await chrome.tabs.get(Number($('target').value)).catch(() => null);
     if (!tab) {
       $('error').hidden = false;
       $('error').textContent = '선택한 창이 닫혔습니다. 다시 골라 주세요.';
       loadTargets();
-      $('start').disabled = false;
+      $('pick').disabled = false;
       return;
     }
-    const res = await chrome.runtime.sendMessage({ type: 'start', tabId: tab.id });
-    $('start').disabled = false;
+    const res = await send('pick', { tabId: tab.id });
+    $('pick').disabled = false;
     if (!res?.ok) {
       $('error').hidden = false;
       $('error').textContent = res?.error || '시작하지 못했습니다.';
@@ -276,25 +368,16 @@ async function init() {
     window.close();
   });
 
-  $('stop').addEventListener('click', () => chrome.runtime.sendMessage({ type: 'stop' }));
+  $('pickStop').addEventListener('click', () => send('pick-stop'));
 
-  $('download').addEventListener('click', async () => {
-    const { session } = await chrome.storage.local.get('session');
-    if (!session) return;
-    const text = [session.title, session.url, '', ...toLines(session.segments), ''].join('\n');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
-    a.download = `${(session.title || 'transcript').replace(/[\\/:*?"<>|]/g, '_')}.txt`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-  });
-
-  $('clear').addEventListener('click', async () => {
-    if (confirm('스크립트를 지울까요?')) await chrome.storage.local.remove('session');
+  $('downloadAll').addEventListener('click', async () => {
+    const { jobs = [] } = await chrome.storage.local.get('jobs');
+    await downloadJobs(jobs.filter((j) => j.state === 'done' && j.count));
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && (changes.status || changes.session || changes.usage || changes.settings)) refresh();
+    if (area !== 'local') return;
+    if (Object.keys(changes).some((k) => ['status', 'jobs', 'usage', 'settings'].includes(k) || k === `seg:${selectedId}`)) refresh();
   });
   refresh();
 }

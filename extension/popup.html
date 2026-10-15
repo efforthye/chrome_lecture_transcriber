@@ -11,7 +11,7 @@
   </header>
 
   <details id="settings">
-    <summary>설정</summary>
+    <summary>키 설정</summary>
     <label>음성인식 서비스
       <select id="provider">
         <option value="groq">Groq (무료)</option>
@@ -35,26 +35,23 @@
     <select id="target"></select>
   </label>
   <div class="actions" style="margin-top:8px">
-    <button id="start" class="primary">영상 선택해서 시작</button>
-    <button id="stop" hidden>중지</button>
+    <button id="pick" class="primary">+ 강의 추가</button>
+    <button id="pickStop" hidden>선택 취소</button>
   </div>
   <p id="hint" class="hint"></p>
-  <div id="progress" hidden>
-    <div class="bar"><div id="barDl"></div><div id="barTx"></div></div>
-    <div id="progressText" class="hint"></div>
-  </div>
   <p id="error" class="error" hidden></p>
 
   <div id="usage" class="usage" hidden></div>
 
-  <section>
+  <div id="jobs" class="jobs"></div>
+
+  <section id="previewBox" hidden>
     <div class="meta"><span id="title"></span><span id="count"></span></div>
     <pre id="preview"></pre>
   </section>
 
   <div class="actions">
-    <button id="download" disabled>.txt 다운로드</button>
-    <button id="clear" disabled>지우기</button>
+    <button id="downloadAll" disabled>완료된 강의 모두 .txt 다운로드</button>
   </div>
 
   <script src="popup.js"></script>
