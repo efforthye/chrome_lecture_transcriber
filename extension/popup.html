@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>Lecture Transcriber</h1>
+    <span id="state" class="state">대기</span>
+  </header>
+
+  <details id="settings">
+    <summary>설정</summary>
+    <label>음성인식 서비스
+      <select id="provider">
+        <option value="groq">Groq (무료)</option>
+        <option value="openai">OpenAI (유료, 분당 $0.006)</option>
+      </select>
+    </label>
+    <label><span id="keyLabel">API 키</span> · <a id="keyLink" target="_blank">발급받기</a>
+      <input id="apiKey" type="password" autocomplete="off" />
+    </label>
+    <label>언어
+      <select id="language">
+        <option value="ko">한국어</option>
+        <option value="en">영어</option>
+        <option value="auto">자동 감지</option>
+      </select>
+    </label>
+  </details>
+
+  <label id="targetRow">영상이 있는 창
+    <select id="target"></select>
+  </label>
+  <div class="actions" style="margin-top:8px">
+    <button id="start" class="primary">영상 선택해서 시작</button>
+    <button id="stop" hidden>중지</button>
+  </div>
+  <p id="hint" class="hint"></p>
+  <div id="progress" hidden>
+    <div class="bar"><div id="barDl"></div><div id="barTx"></div></div>
+    <div id="progressText" class="hint"></div>
+  </div>
+  <p id="error" class="error" hidden></p>
+
+  <section>
+    <div class="meta"><span id="title"></span><span id="count"></span></div>
+    <pre id="preview"></pre>
+  </section>
+
+  <div class="actions">
+    <button id="download" disabled>.txt 다운로드</button>
+    <button id="clear" disabled>지우기</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
