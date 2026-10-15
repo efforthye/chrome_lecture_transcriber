@@ -47,12 +47,14 @@ async function cleanup() {
 async function getSettings() {
   const { settings = {} } = await chrome.storage.local.get('settings');
   const provider = settings.provider || 'groq';
-  return { provider, apiKey: settings.apiKeys?.[provider] || '', language: settings.language || 'ko' };
+  // 키는 한 줄에 하나씩 여러 개 넣을 수 있다
+  const apiKeys = [...new Set((settings.apiKeys?.[provider] || '').split(/[\s,]+/).filter(Boolean))];
+  return { provider, apiKeys, language: settings.language || 'ko' };
 }
 
 async function start(tabId) {
   const settings = await getSettings();
-  if (!settings.apiKey) throw new Error('설정에서 API 키를 먼저 입력해 주세요.');
+  if (!settings.apiKeys.length) throw new Error('설정에서 API 키를 먼저 입력해 주세요.');
 
   const status = await getStatus();
   if (status.state === 'working') throw new Error('이미 변환 중입니다. 중지 후 다시 시작해 주세요.');
@@ -132,13 +134,13 @@ function appendSegments(segments) {
 }
 
 // 이 브라우저에서 보낸 오디오 양을 모델별로 기록한다 (무료 한도 확인용, 24시간 지난 기록은 버림)
-function recordUsage({ type, provider, model, sec, until }) {
+function recordUsage({ type, provider, model, key, sec, until }) {
   return serialize(async () => {
     const { usage = { log: [], blocked: {} } } = await chrome.storage.local.get('usage');
     const now = Date.now();
     usage.log = usage.log.filter((e) => now - e.t < 86_400_000);
-    if (type === 'usage') usage.log.push({ t: now, provider, model, sec });
-    else usage.blocked[model] = until;
+    if (type === 'usage') usage.log.push({ t: now, provider, model, key, sec });
+    else usage.blocked[`${key}:${model}`] = until;
     await chrome.storage.local.set({ usage });
   });
 }

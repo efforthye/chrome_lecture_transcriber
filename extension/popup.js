@@ -94,22 +94,32 @@ const hm = (sec) => {
 function renderUsage(usage, settings) {
   const box = $('usage');
   if (settings.provider !== 'groq') return (box.hidden = true);
+  const tails = [...new Set((settings.apiKeys?.groq || '').split(/[\s,]+/).filter(Boolean).map((k) => k.slice(-4)))];
+  if (!tails.length) return (box.hidden = true);
   const now = Date.now();
   const log = (usage?.log || []).filter((e) => e.provider === 'groq');
-  const rows = Object.entries(FREE_LIMITS).map(([model, lim]) => {
-    const day = log.filter((e) => e.model === model && now - e.t < 86_400_000).reduce((n, e) => n + e.sec, 0);
-    const hour = log.filter((e) => e.model === model && now - e.t < 3_600_000).reduce((n, e) => n + e.sec, 0);
-    const until = usage?.blocked?.[model];
-    const name = model.endsWith('turbo') ? 'turbo' : 'large-v3';
-    const blocked =
-      until > now
-        ? ` <span class="blocked">한도 도달 · ${new Date(until).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 해제</span>`
-        : '';
-    return { day, lim, html: `<div class="row"><span>${name}${blocked}</span><span>최근 1시간 ${hm(hour)}/${hm(lim.hour)} · 24시간 ${hm(day)}/${hm(lim.day)}</span></div>` };
-  });
-  const left = rows.reduce((n, r) => n + Math.max(0, r.lim.day - r.day), 0);
+  const sum = (key, model, ms) =>
+    log
+      .filter((e) => (e.key ?? tails[0]) === key && e.model === model && now - e.t < ms)
+      .reduce((n, e) => n + e.sec, 0);
+
+  let left = 0;
+  const rows = tails.flatMap((key) =>
+    Object.entries(FREE_LIMITS).map(([model, lim]) => {
+      const day = sum(key, model, 86_400_000);
+      const hour = sum(key, model, 3_600_000);
+      left += Math.max(0, lim.day - day);
+      const until = usage?.blocked?.[`${key}:${model}`] ?? (key === tails[0] ? usage?.blocked?.[model] : null);
+      const name = `${tails.length > 1 ? `…${key} ` : ''}${model.endsWith('turbo') ? 'turbo' : 'large-v3'}`;
+      const blocked =
+        until > now
+          ? ` <span class="blocked">한도 · ${new Date(until).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 해제</span>`
+          : '';
+      return `<div class="row"><span>${name}${blocked}</span><span>최근 1시간 ${hm(hour)}/${hm(lim.hour)} · 24시간 ${hm(day)}/${hm(lim.day)}</span></div>`;
+    })
+  );
   box.innerHTML =
-    `<div class="row"><span>남은 무료 사용량 (추정)</span><b>약 ${hm(left)}</b></div>${rows.map((r) => r.html).join('')}` +
+    `<div class="row"><span>남은 무료 사용량 (추정, 키 ${tails.length}개)</span><b>약 ${hm(left)}</b></div>${rows.join('')}` +
     `<div class="note">이 브라우저에서 v0.4 설치 후 변환한 양만 셉니다. 실제 사용량은 <a href="https://console.groq.com/dashboard/usage" target="_blank">Groq Usage</a>에서 확인하세요.</div>`;
   box.hidden = false;
 }

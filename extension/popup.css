@@ -32,7 +32,7 @@ h1 { font-size: 15px; margin: 0; }
 details { margin-bottom: 10px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
 summary { cursor: pointer; color: var(--muted); }
 label { display: block; margin-top: 8px; color: var(--muted); font-size: 12px; }
-input, select {
+input, select, textarea {
   display: block; width: 100%; margin-top: 4px; padding: 6px 8px;
   border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); font: inherit;
 }
@@ -65,3 +65,5 @@ a { color: var(--primary); }
 .usage .row { display: flex; justify-content: space-between; gap: 8px; }
 .usage .blocked { color: var(--danger); }
 .usage .note { margin-top: 6px; font-size: 11px; }
+textarea#apiKey { resize: vertical; font: 12px/1.5 ui-monospace, Menlo, monospace; -webkit-text-security: disc; }
+textarea#apiKey:focus { -webkit-text-security: none; }

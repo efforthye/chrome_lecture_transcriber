@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Lecture Transcriber",
   "description": "강의 영상을 클릭하면 영상 파일의 오디오를 받아 Whisper로 타임스탬프 스크립트(.txt)를 만듭니다.",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "minimum_chrome_version": "116",
   "permissions": [
     "offscreen",

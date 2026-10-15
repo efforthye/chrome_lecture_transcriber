@@ -313,7 +313,8 @@ let prevText = '';
 
 const clock = (sec) => new Date(sec * 1000).toISOString().slice(11, 19);
 
-const blockedUntil = new Map(); // 모델 → 한도가 풀리는 시각(ms)
+const blockedUntil = new Map(); // '키끝4자리:모델' → 한도가 풀리는 시각(ms)
+const deadKeys = new Set(); // 401/403이 난 키
 
 const sleep = (sec, signal) =>
   new Promise((resolve, reject) => {
@@ -321,28 +322,35 @@ const sleep = (sec, signal) =>
     signal.addEventListener('abort', () => (clearTimeout(t), reject(signal.reason)), { once: true });
   });
 
-async function transcribe(chunk, { provider, apiKey, language }, signal) {
+// 키 끝 4자리. 사용량 기록/표시용이며 키 자체는 저장하지 않는다
+const keyTail = (key) => key.slice(-4);
+
+async function transcribe(chunk, { provider, apiKeys, language }, signal) {
   const { url, models } = PROVIDERS[provider];
   const wav = toWav(chunk.pcm);
+  // (모델, 키) 조합. 좋은 모델을 모든 키에서 먼저 쓰고, 다 막히면 다음 모델로 넘어간다
+  const slots = models.flatMap((model) => apiKeys.map((key) => ({ model, key, id: `${keyTail(key)}:${model}` })));
 
   let res = null;
-  let model = null;
+  let slot = null;
   let failures = 0;
   for (;;) {
-    // 한도에 안 걸린 모델 중 앞쪽 것을 쓰고, 전부 걸렸으면 가장 먼저 풀리는 모델을 기다린다
+    if (apiKeys.every((k) => deadKeys.has(k))) throw new Error('등록된 API 키가 모두 유효하지 않습니다. 설정에서 키를 확인해 주세요.');
+    // 한도에 안 걸린 조합 중 앞쪽 것을 쓰고, 전부 걸렸으면 가장 먼저 풀리는 조합을 기다린다
     const now = Date.now();
-    model = models.find((m) => (blockedUntil.get(m) || 0) <= now);
-    if (!model) {
-      const next = Math.min(...models.map((m) => blockedUntil.get(m)));
+    const usable = slots.filter((s) => !deadKeys.has(s.key));
+    slot = usable.find((s) => (blockedUntil.get(s.id) || 0) <= now);
+    if (!slot) {
+      const next = Math.min(...usable.map((s) => blockedUntil.get(s.id)));
       const until = new Date(next).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-      toBackground('notice', { message: `무료 사용 한도에 걸려 기다리는 중… ${until}쯤 이어서 변환합니다.` });
+      toBackground('notice', { message: `모든 키가 무료 사용 한도에 걸려 기다리는 중… ${until}쯤 이어서 변환합니다.` });
       await sleep(Math.max(1, (next - now) / 1000), signal);
       continue;
     }
 
     const form = new FormData();
     form.append('file', wav, 'audio.wav');
-    form.append('model', model);
+    form.append('model', slot.model);
     form.append('response_format', 'verbose_json');
     form.append('timestamp_granularities[]', 'segment');
     form.append('temperature', '0');
@@ -350,11 +358,11 @@ async function transcribe(chunk, { provider, apiKey, language }, signal) {
     if (prevText) form.append('prompt', prevText.slice(-200));
 
     try {
-      const fallback = model !== models[0] ? ` (${models[0]} 한도 도달 → ${model}로 대체)` : '';
-      toBackground('notice', { message: `${clock(chunk.start)}부터 5분 분량 변환 중…${fallback}` });
+      const who = apiKeys.length > 1 ? ` · 키 …${keyTail(slot.key)}` : '';
+      toBackground('notice', { message: `${clock(chunk.start)}부터 5분 분량 변환 중… (${slot.model}${who})` });
       res = await fetch(url, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers: { Authorization: `Bearer ${slot.key}` },
         body: form,
         signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
       });
@@ -364,23 +372,26 @@ async function transcribe(chunk, { provider, apiKey, language }, signal) {
     }
     if (res?.status === 429) {
       const wait = Math.min(Number(res.headers.get('retry-after')) || 60, 900);
-      blockedUntil.set(model, Date.now() + wait * 1000);
-      toBackground('usage-blocked', { provider, model, until: blockedUntil.get(model) });
+      blockedUntil.set(slot.id, Date.now() + wait * 1000);
+      toBackground('usage-blocked', { provider, model: slot.model, key: keyTail(slot.key), until: blockedUntil.get(slot.id) });
+    } else if (res?.status === 401 || res?.status === 403) {
+      // 잘못된 키는 빼고 나머지 키로 계속한다
+      deadKeys.add(slot.key);
+      toBackground('error', { message: `키 …${keyTail(slot.key)}가 유효하지 않아 건너뜁니다 (${res.status}).` });
     } else if (!res || res.status >= 500) {
       if (++failures >= 6) break;
       toBackground('notice', { message: `서버 응답이 없어 다시 시도 중… (${failures}/5)` });
       await sleep(5 * failures, signal);
     } else break;
   }
+  const model = slot.model;
   toBackground('notice', { message: null });
   if (!res) throw new Error('음성인식 API에 연결하지 못했습니다.');
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const err = new Error(`음성인식 API 오류 (${res.status}): ${body.error?.message || res.statusText}`);
-    err.fatal = res.status === 401 || res.status === 403;
-    throw err;
+    throw new Error(`음성인식 API 오류 (${res.status}): ${body.error?.message || res.statusText}`);
   }
-  toBackground('usage', { provider, model, sec: chunk.pcm.length / SR });
+  toBackground('usage', { provider, model, key: keyTail(slot.key), sec: chunk.pcm.length / SR });
 
   const data = await res.json();
   const segments = (data.segments || [])
