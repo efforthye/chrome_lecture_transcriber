@@ -325,7 +325,7 @@ const keyTail = (key) => key.slice(-4);
 
 async function transcribe(chunk, { provider, apiKeys, language }, signal, job) {
   const { url, models } = PROVIDERS[provider];
-  const wav = toWav(chunk.pcm);
+  const { wav } = chunk;
   // (모델, 키) 조합. 좋은 모델을 모든 키에서 먼저 쓰고, 다 막히면 다음 모델로 넘어간다
   const slots = models.flatMap((model) => apiKeys.map((key) => ({ model, key, id: `${keyTail(key)}:${model}` })));
 
@@ -389,7 +389,7 @@ async function transcribe(chunk, { provider, apiKeys, language }, signal, job) {
     const body = await res.json().catch(() => ({}));
     throw new Error(`음성인식 API 오류 (${res.status}): ${body.error?.message || res.statusText}`);
   }
-  toBackground('usage', { provider, model, key: keyTail(slot.key), sec: chunk.pcm.length / SR });
+  toBackground('usage', { provider, model, key: keyTail(slot.key), sec: chunk.sec });
 
   const data = await res.json();
   const segments = (data.segments || [])
@@ -403,8 +403,47 @@ async function transcribe(chunk, { provider, apiKeys, language }, signal, job) {
 
 // ---------- 실행 ----------
 
+// 동시에 몇 개까지 허용할지 정하는 관문. 기다리는 쪽은 먼저 추가된 강의(order가 작은 쪽)부터 들어간다.
+class Gate {
+  constructor(size) {
+    this.free = size;
+    this.waiting = [];
+  }
+
+  async acquire(order, signal, onWait) {
+    if (this.free > 0 && !this.waiting.length) {
+      this.free--;
+      return;
+    }
+    onWait?.();
+    await new Promise((resolve, reject) => {
+      const w = { order, resolve };
+      this.waiting.push(w);
+      this.waiting.sort((a, b) => a.order - b.order);
+      signal.addEventListener(
+        'abort',
+        () => {
+          const i = this.waiting.indexOf(w);
+          if (i >= 0) this.waiting.splice(i, 1), reject(signal.reason);
+        },
+        { once: true }
+      );
+    });
+  }
+
+  release() {
+    const next = this.waiting.shift();
+    if (next) next.resolve();
+    else this.free++;
+  }
+}
+
+// 강의는 추가하자마자 오디오를 받아 둔다(강의 창을 닫아도 되게). 음성인식 요청은 전체에서 2개씩만 보낸다.
+const downloadGate = new Gate(3);
+const requestGate = new Gate(2);
+
 // 강의 하나를 처리한다. 여러 개가 동시에 돌 수 있고, 메시지마다 jobId를 붙여 보낸다.
-async function run({ jobId, source, settings }) {
+async function run({ jobId, order = Date.now(), source, settings }) {
   const controller = new AbortController();
   controllers.set(jobId, controller);
   const { signal } = controller;
@@ -415,7 +454,8 @@ async function run({ jobId, source, settings }) {
     toBackground('progress', { jobId, progress: { ...state } });
   };
 
-  // 다운로드와 변환을 동시에 돌린다. 변환이 밀리면 다운로드가 기다린다(메모리 보호).
+  // 다운로드와 변환을 동시에 돌린다. 받아 둔 조각은 WAV Blob으로 쌓아 두는데,
+  // 크기가 커지면 크롬이 알아서 디스크로 내려 보내므로 메모리 걱정 없이 미리 받을 수 있다.
   const queue = [];
   const waiters = new Set();
   let producing = true;
@@ -432,17 +472,22 @@ async function run({ jobId, source, settings }) {
     });
 
   const chunker = new Chunker(async (chunk) => {
-    await waitFor(() => queue.length < 2 || signal.aborted);
-    queue.push(chunk);
+    queue.push({ wav: toWav(chunk.pcm), start: chunk.start, sec: chunk.pcm.length / SR });
     notify();
   });
+  const notice = (message) => toBackground('notice', { jobId, message });
 
   const producer = (async () => {
+    let acquired = false;
     try {
+      await downloadGate.acquire(order, signal, () => notice('다른 강의 다운로드가 끝나길 기다리는 중…'));
+      acquired = true;
+      notice(null);
       if (source.kind === 'hls') await produceHls(source.url, signal, chunker, progress);
       else await produceFile(source.url, signal, chunker, progress);
       await chunker.flush();
     } finally {
+      if (acquired) downloadGate.release();
       producing = false;
       notify();
     }
@@ -455,9 +500,15 @@ async function run({ jobId, source, settings }) {
       if (!queue.length) return;
       const chunk = queue.shift();
       notify();
-      const segments = await transcribe(chunk, settings, signal, job);
+      await requestGate.acquire(order, signal, () => notice('오디오 받아 두는 중 · 앞 강의 변환이 끝나면 이어서 변환해요'));
+      let segments;
+      try {
+        segments = await transcribe(chunk, settings, signal, job);
+      } finally {
+        requestGate.release();
+      }
       if (segments.length) toBackground('segments', { jobId, segments });
-      progress({ transcribedSec: chunk.start + chunk.pcm.length / SR });
+      progress({ transcribedSec: chunk.start + chunk.sec });
     }
   })();
 

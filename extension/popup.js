@@ -131,7 +131,7 @@ async function render(data) {
   $('hint').textContent = picking
     ? '강의 창에서 영상 위를 클릭하세요. (Esc로 취소)'
     : jobs.length
-      ? '변환 중에도 계속 강의를 추가할 수 있어요. 2개씩 동시에 변환하고 나머지는 차례로 진행돼요.'
+      ? '추가하면 바로 오디오를 받아 두니 강의 창은 닫아도 돼요. 변환은 2개씩 차례로 진행돼요.'
       : '창을 고르고 + 강의 추가를 누른 뒤, 그 창에서 영상을 클릭하세요.';
   $('error').hidden = !status.error;
   $('error').textContent = status.error || '';

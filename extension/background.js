@@ -8,7 +8,7 @@
 
 const OFFSCREEN_URL = 'offscreen.html';
 const REFERER_RULE_ID = 1;
-const MAX_PARALLEL = 2; // 동시에 변환하는 강의 수
+const MAX_PARALLEL = 30; // 추가하자마자 바로 시작한다. 실제 동시 다운로드/변환 수는 오프스크린이 조절한다
 
 let writeChain = Promise.resolve();
 const serialize = (fn) => (writeChain = writeChain.then(fn, fn));
@@ -133,7 +133,14 @@ async function doSchedule() {
   if (toStart.at(-1).frameUrl) await setReferer(toStart.at(-1).frameUrl);
   await ensureOffscreen();
   for (const job of toStart) {
-    chrome.runtime.sendMessage({ target: 'offscreen', type: 'run', jobId: job.id, source: job.source, settings });
+    chrome.runtime.sendMessage({
+      target: 'offscreen',
+      type: 'run',
+      jobId: job.id,
+      order: job.createdAt,
+      source: job.source,
+      settings,
+    });
   }
 }
 
