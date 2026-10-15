@@ -80,8 +80,42 @@ function render({ status = { state: 'idle' }, session }) {
   $('clear').disabled = !segs.length || state !== 'idle';
 }
 
+// Groq 무료 한도 (모델별, 오디오 초). 실제 값은 console.groq.com/settings/limits 기준
+const FREE_LIMITS = {
+  'whisper-large-v3': { hour: 7200, day: 28800 },
+  'whisper-large-v3-turbo': { hour: 7200, day: 28800 },
+};
+
+const hm = (sec) => {
+  const m = Math.round(sec / 60);
+  return m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`;
+};
+
+function renderUsage(usage, settings) {
+  const box = $('usage');
+  if (settings.provider !== 'groq') return (box.hidden = true);
+  const now = Date.now();
+  const log = (usage?.log || []).filter((e) => e.provider === 'groq');
+  const rows = Object.entries(FREE_LIMITS).map(([model, lim]) => {
+    const day = log.filter((e) => e.model === model && now - e.t < 86_400_000).reduce((n, e) => n + e.sec, 0);
+    const hour = log.filter((e) => e.model === model && now - e.t < 3_600_000).reduce((n, e) => n + e.sec, 0);
+    const until = usage?.blocked?.[model];
+    const name = model.endsWith('turbo') ? 'turbo' : 'large-v3';
+    const blocked =
+      until > now
+        ? ` <span class="blocked">한도 도달 · ${new Date(until).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 해제</span>`
+        : '';
+    return { day, lim, html: `<div class="row"><span>${name}${blocked}</span><span>1시간 ${hm(hour)} / ${hm(lim.hour)} · 24시간 ${hm(day)} / ${hm(lim.day)}</span></div>` };
+  });
+  const left = rows.reduce((n, r) => n + Math.max(0, r.lim.day - r.day), 0);
+  box.innerHTML = `<div class="row"><span>오늘 남은 무료 사용량</span><b>약 ${hm(left)}</b></div>${rows.map((r) => r.html).join('')}`;
+  box.hidden = false;
+}
+
 async function refresh() {
-  render(await chrome.storage.local.get(['status', 'session']));
+  const data = await chrome.storage.local.get(['status', 'session', 'usage', 'settings']);
+  render(data);
+  renderUsage(data.usage, { provider: 'groq', ...data.settings });
 }
 
 // 모든 창의 탭을 나열한다. 강의가 뜨는 새 창(툴바 없는 팝업 창)과 VOD 페이지를 맨 위에 둔다.
@@ -190,7 +224,7 @@ async function init() {
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && (changes.status || changes.session)) refresh();
+    if (area === 'local' && (changes.status || changes.session || changes.usage || changes.settings)) refresh();
   });
   refresh();
 }

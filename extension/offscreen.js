@@ -323,11 +323,12 @@ async function transcribe(chunk, { provider, apiKey, language }, signal) {
   const wav = toWav(chunk.pcm);
 
   let res = null;
+  let model = null;
   let failures = 0;
   for (;;) {
     // 한도에 안 걸린 모델 중 앞쪽 것을 쓰고, 전부 걸렸으면 가장 먼저 풀리는 모델을 기다린다
     const now = Date.now();
-    const model = models.find((m) => (blockedUntil.get(m) || 0) <= now);
+    model = models.find((m) => (blockedUntil.get(m) || 0) <= now);
     if (!model) {
       const next = Math.min(...models.map((m) => blockedUntil.get(m)));
       const until = new Date(next).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
@@ -354,6 +355,7 @@ async function transcribe(chunk, { provider, apiKey, language }, signal) {
     if (res?.status === 429) {
       const wait = Math.min(Number(res.headers.get('retry-after')) || 60, 900);
       blockedUntil.set(model, Date.now() + wait * 1000);
+      toBackground('usage-blocked', { provider, model, until: blockedUntil.get(model) });
     } else if (!res || res.status >= 500) {
       if (++failures >= 6) break;
       toBackground('notice', { message: `서버 응답이 없어 다시 시도 중… (${failures}/5)` });
@@ -368,6 +370,7 @@ async function transcribe(chunk, { provider, apiKey, language }, signal) {
     err.fatal = res.status === 401 || res.status === 403;
     throw err;
   }
+  toBackground('usage', { provider, model, sec: chunk.pcm.length / SR });
 
   const data = await res.json();
   const segments = (data.segments || [])

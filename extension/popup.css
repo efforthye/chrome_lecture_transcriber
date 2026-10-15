@@ -60,3 +60,7 @@ a { color: var(--primary); }
 #barDl { background: var(--border); }
 #barTx { background: var(--primary); }
 [hidden] { display: none !important; }
+.usage { margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; color: var(--muted); }
+.usage b { color: var(--fg); font-weight: 600; }
+.usage .row { display: flex; justify-content: space-between; gap: 8px; }
+.usage .blocked { color: var(--danger); }

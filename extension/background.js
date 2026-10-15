@@ -131,6 +131,18 @@ function appendSegments(segments) {
   });
 }
 
+// 이 브라우저에서 보낸 오디오 양을 모델별로 기록한다 (무료 한도 확인용, 24시간 지난 기록은 버림)
+function recordUsage({ type, provider, model, sec, until }) {
+  return serialize(async () => {
+    const { usage = { log: [], blocked: {} } } = await chrome.storage.local.get('usage');
+    const now = Date.now();
+    usage.log = usage.log.filter((e) => now - e.t < 86_400_000);
+    if (type === 'usage') usage.log.push({ t: now, provider, model, sec });
+    else usage.blocked[model] = until;
+    await chrome.storage.local.set({ usage });
+  });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.target === 'offscreen') return;
 
@@ -155,6 +167,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
     case 'progress':
       setStatus((s) => ({ progress: { ...s.progress, ...msg.progress } }));
+      break;
+    case 'usage':
+    case 'usage-blocked':
+      recordUsage(msg);
       break;
     case 'notice':
       setStatus({ notice: msg.message });
