@@ -1,7 +1,7 @@
 const $ = (id) => document.getElementById(id);
 
 const PROVIDERS = {
-  groq: { label: 'Groq API 키 (gsk_...)', link: 'https://console.groq.com/keys' },
+  groq: { label: 'Groq API 키 (여러 개면 엔터로 줄바꿈해서 한 줄에 하나씩)', link: 'https://console.groq.com/keys' },
   openai: { label: 'OpenAI API 키 (sk-...)', link: 'https://platform.openai.com/api-keys' },
 };
 

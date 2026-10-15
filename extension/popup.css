@@ -67,3 +67,4 @@ a { color: var(--primary); }
 .usage .note { margin-top: 6px; font-size: 11px; }
 textarea#apiKey { resize: vertical; font: 12px/1.5 ui-monospace, Menlo, monospace; -webkit-text-security: disc; }
 textarea#apiKey:focus { -webkit-text-security: none; }
+.usage .row > span:first-child { white-space: nowrap; }
