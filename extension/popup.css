@@ -65,6 +65,9 @@ a { color: var(--primary); }
 .usage .row { display: flex; justify-content: space-between; gap: 8px; }
 .usage .blocked { color: var(--danger); }
 .usage .note { margin-top: 6px; font-size: 11px; }
-textarea#apiKey { resize: vertical; font: 12px/1.5 ui-monospace, Menlo, monospace; -webkit-text-security: disc; }
-textarea#apiKey:focus { -webkit-text-security: none; }
+.field { margin-top: 8px; color: var(--muted); font-size: 12px; }
+.key-row { display: flex; gap: 6px; margin-top: 4px; }
+.key-row input { margin-top: 0; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+.key-row button { flex: none; width: 32px; padding: 0; font-size: 16px; line-height: 1; }
+button.add { margin-top: 6px; width: 100%; padding: 6px; font-size: 12px; border-style: dashed; background: transparent; color: var(--muted); }
 .usage .row > span:first-child { white-space: nowrap; }

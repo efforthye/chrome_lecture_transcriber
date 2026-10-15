@@ -1,8 +1,8 @@
 const $ = (id) => document.getElementById(id);
 
 const PROVIDERS = {
-  groq: { label: 'Groq API 키 (여러 개면 엔터로 줄바꿈해서 한 줄에 하나씩)', link: 'https://console.groq.com/keys' },
-  openai: { label: 'OpenAI API 키 (sk-...)', link: 'https://platform.openai.com/api-keys' },
+  groq: { label: 'Groq API 키', link: 'https://console.groq.com/keys' },
+  openai: { label: 'OpenAI API 키', link: 'https://platform.openai.com/api-keys' },
 };
 
 const STATE_LABEL = { idle: '대기', picking: '영상 선택 중', working: '변환 중' };
@@ -166,25 +166,64 @@ async function init() {
     delete settings.apiKey;
   }
 
+  // 키는 저장할 때 줄바꿈으로 이어 붙인 문자열로 둔다 (background가 그대로 나눠 쓴다)
+  const getKeys = () => (settings.apiKeys[settings.provider] || '').split(/[\s,]+/).filter(Boolean);
+  const saveKeys = () => {
+    const keys = [...$('keyList').querySelectorAll('input')].map((i) => i.value.trim()).filter(Boolean);
+    settings.apiKeys[settings.provider] = keys.join('\n');
+    save();
+  };
+
+  const addKeyRow = (value = '', focus = false) => {
+    const row = document.createElement('div');
+    row.className = 'key-row';
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.value = value;
+    input.placeholder = settings.provider === 'groq' ? 'gsk_...' : 'sk-...';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    // 입력 중에만 키가 보이게
+    input.addEventListener('focus', () => (input.type = 'text'));
+    input.addEventListener('blur', () => (input.type = 'password'));
+    input.addEventListener('input', saveKeys);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '−';
+    remove.title = '이 키 삭제';
+    remove.addEventListener('click', () => {
+      row.remove();
+      if (!$('keyList').children.length) addKeyRow();
+      saveKeys();
+    });
+    row.append(input, remove);
+    $('keyList').append(row);
+    if (focus) input.focus();
+  };
+
+  const renderKeys = () => {
+    $('keyList').replaceChildren();
+    const keys = getKeys();
+    (keys.length ? keys : ['']).forEach((k) => addKeyRow(k));
+  };
+
+  const save = () => chrome.storage.local.set({ settings });
+  $('addKey').addEventListener('click', () => addKeyRow('', true));
+
   const showProvider = () => {
     const p = PROVIDERS[settings.provider];
     $('provider').value = settings.provider;
     $('keyLabel').textContent = p.label;
     $('keyLink').href = p.link;
-    $('apiKey').value = settings.apiKeys[settings.provider] || '';
+    renderKeys();
   };
   showProvider();
   $('language').value = settings.language;
   if (!settings.apiKeys[settings.provider]) $('settings').open = true;
 
-  const save = () => chrome.storage.local.set({ settings });
   $('provider').addEventListener('change', () => {
     settings.provider = $('provider').value;
     showProvider();
-    save();
-  });
-  $('apiKey').addEventListener('input', () => {
-    settings.apiKeys[settings.provider] = $('apiKey').value.trim();
     save();
   });
   $('language').addEventListener('change', () => {

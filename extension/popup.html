@@ -18,9 +18,10 @@
         <option value="openai">OpenAI (유료, 분당 $0.006)</option>
       </select>
     </label>
-    <label><span id="keyLabel">API 키</span> · <a id="keyLink" target="_blank">발급받기</a>
-      <textarea id="apiKey" rows="2" spellcheck="false" autocomplete="off" placeholder="키가 여러 개면 한 줄에 하나씩"></textarea>
-    </label>
+    <div class="field"><span id="keyLabel">API 키</span> · <a id="keyLink" target="_blank">발급받기</a>
+      <div id="keyList"></div>
+      <button id="addKey" type="button" class="add">+ 키 추가</button>
+    </div>
     <label>언어
       <select id="language">
         <option value="ko">한국어</option>
