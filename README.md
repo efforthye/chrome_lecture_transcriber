@@ -6,10 +6,12 @@ Chrome extension that captures lecture video audio with a single click and turns
 
 ## 설치
 
-1. 이 저장소를 내려받습니다.
+1. **[⬇️ lecture-transcriber.zip 다운로드](https://github.com/efforthye/chrome_lecture_transcriber/releases/latest/download/lecture-transcriber.zip)** 후 압축을 풉니다.
 2. Chrome에서 `chrome://extensions` 를 열고 오른쪽 위 **개발자 모드**를 켭니다.
-3. **압축해제된 확장 프로그램을 로드합니다** → `extension/` 폴더를 선택합니다.
+3. **압축해제된 확장 프로그램을 로드합니다** → 압축을 푼 `lecture-transcriber` 폴더를 선택합니다.
 4. 툴바의 퍼즐 아이콘에서 **Lecture Transcriber**를 고정해 두면 편합니다.
+
+업데이트: 새 zip을 받아 같은 폴더에 덮어쓰고 `chrome://extensions`에서 ↻(새로고침)을 누르세요. API 키와 스크립트는 그대로 남습니다.
 
 Chrome 116 이상이 필요합니다.
 
