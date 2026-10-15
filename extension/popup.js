@@ -91,6 +91,14 @@ const hm = (sec) => {
   return m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`;
 };
 
+// 3:05 형식 (칸이 좁은 표 안에서 사용)
+const hmm = (sec) => {
+  const m = Math.round(sec / 60);
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+};
+
+const timeOf = (ms) => new Date(ms).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+
 function renderUsage(usage, settings) {
   const box = $('usage');
   if (settings.provider !== 'groq') return (box.hidden = true);
@@ -103,24 +111,35 @@ function renderUsage(usage, settings) {
       .filter((e) => (e.key ?? tails[0]) === key && e.model === model && now - e.t < ms)
       .reduce((n, e) => n + e.sec, 0);
 
-  let left = 0;
-  const rows = tails.flatMap((key) =>
-    Object.entries(FREE_LIMITS).map(([model, lim]) => {
+  const models = Object.entries(FREE_LIMITS);
+  let used = 0;
+  let total = 0;
+  const cells = tails.map((key) => {
+    const row = models.map(([model, lim]) => {
       const day = sum(key, model, 86_400_000);
       const hour = sum(key, model, 3_600_000);
-      left += Math.max(0, lim.day - day);
+      used += Math.min(day, lim.day);
+      total += lim.day;
       const until = usage?.blocked?.[`${key}:${model}`] ?? (key === tails[0] ? usage?.blocked?.[model] : null);
-      const name = `${tails.length > 1 ? `…${key} ` : ''}${model.endsWith('turbo') ? 'turbo' : 'large-v3'}`;
-      const blocked =
-        until > now
-          ? ` <span class="blocked">한도 · ${new Date(until).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 해제</span>`
-          : '';
-      return `<div class="row"><span>${name}${blocked}</span><span>최근 1시간 ${hm(hour)}/${hm(lim.hour)} · 24시간 ${hm(day)}/${hm(lim.day)}</span></div>`;
-    })
-  );
-  box.innerHTML =
-    `<div class="row"><span>남은 무료 사용량 (추정, 키 ${tails.length}개)</span><b>약 ${hm(left)}</b></div>${rows.join('')}` +
-    `<div class="note">이 브라우저에서 v0.4 설치 후 변환한 양만 셉니다. 실제 사용량은 <a href="https://console.groq.com/dashboard/usage" target="_blank">Groq Usage</a>에서 확인하세요.</div>`;
+      const blocked = until > now;
+      const pct = Math.min(100, (100 * day) / lim.day);
+      const title = `최근 1시간 ${hm(hour)} / ${hm(lim.hour)}\n최근 24시간 ${hm(day)} / ${hm(lim.day)}`;
+      return `<div class="cell${blocked ? ' blocked' : ''}" title="${title}">
+        <div class="meter"><i style="width:${pct}%"></i></div>
+        <span class="t">${blocked ? `한도 · ${timeOf(until)} 해제` : `${hmm(day)} / ${hmm(lim.day)}`}</span>
+      </div>`;
+    });
+    return `<span class="key">…${key}</span>${row.join('')}`;
+  });
+
+  box.innerHTML = `
+    <div class="usage-head"><span>남은 무료 사용량 · 키 ${tails.length}개</span><b>약 ${hm(total - used)}</b></div>
+    <div class="meter usage-total"><i style="width:${(100 * used) / total}%"></i></div>
+    <div class="usage-grid">
+      <span class="th"></span><span class="th">large-v3</span><span class="th">turbo</span>
+      ${cells.join('')}
+    </div>
+    <div class="note">최근 24시간 사용량 (추정). 마우스를 올리면 1시간 사용량이 보여요. 실제 사용량은 <a href="https://console.groq.com/dashboard/usage" target="_blank">Groq Usage</a>.</div>`;
   box.hidden = false;
 }
 
