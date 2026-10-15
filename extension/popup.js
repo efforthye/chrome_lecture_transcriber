@@ -105,10 +105,12 @@ function renderUsage(usage, settings) {
       until > now
         ? ` <span class="blocked">한도 도달 · ${new Date(until).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 해제</span>`
         : '';
-    return { day, lim, html: `<div class="row"><span>${name}${blocked}</span><span>1시간 ${hm(hour)} / ${hm(lim.hour)} · 24시간 ${hm(day)} / ${hm(lim.day)}</span></div>` };
+    return { day, lim, html: `<div class="row"><span>${name}${blocked}</span><span>최근 1시간 ${hm(hour)}/${hm(lim.hour)} · 24시간 ${hm(day)}/${hm(lim.day)}</span></div>` };
   });
   const left = rows.reduce((n, r) => n + Math.max(0, r.lim.day - r.day), 0);
-  box.innerHTML = `<div class="row"><span>오늘 남은 무료 사용량</span><b>약 ${hm(left)}</b></div>${rows.map((r) => r.html).join('')}`;
+  box.innerHTML =
+    `<div class="row"><span>남은 무료 사용량 (추정)</span><b>약 ${hm(left)}</b></div>${rows.map((r) => r.html).join('')}` +
+    `<div class="note">이 브라우저에서 v0.4 설치 후 변환한 양만 셉니다. 실제 사용량은 <a href="https://console.groq.com/dashboard/usage" target="_blank">Groq Usage</a>에서 확인하세요.</div>`;
   box.hidden = false;
 }
 

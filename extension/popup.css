@@ -64,3 +64,4 @@ a { color: var(--primary); }
 .usage b { color: var(--fg); font-weight: 600; }
 .usage .row { display: flex; justify-content: space-between; gap: 8px; }
 .usage .blocked { color: var(--danger); }
+.usage .note { margin-top: 6px; font-size: 11px; }
