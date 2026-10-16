@@ -1,80 +1,135 @@
-# chrome_lecture_transcriber
+<div align="center">
 
-Chrome extension that captures lecture video audio with a single click and turns it into a timestamped transcript (.txt) using Whisper speech-to-text.
+<img src="extension/icons/icon128.png" width="96" alt="Lecture Transcriber" />
 
-강의 영상 영역을 클릭하면 영상 원본(HLS `.m3u8` 또는 `.mp4`)을 직접 내려받아 오디오만 뽑고, Whisper 음성인식으로 영상 시간 기준 타임스탬프가 붙은 `.txt` 스크립트를 만들어 줍니다. **영상을 재생하지 않아도** 처음부터 끝까지 변환됩니다. 자막 파일이 없는 학교 LMS 영상(예: 홍익대 `cn2.hongik.ac.kr/mod/vod/`)을 염두에 두고 만들었습니다.
+# Lecture Transcriber
 
-## 설치
+**Turn lecture videos into timestamped transcripts (.txt · .srt · .vtt).**
+Click the video once. On YouTube, it grabs the existing captions instantly.
 
-1. **[⬇️ lecture-transcriber.zip 다운로드](https://github.com/efforthye/chrome_lecture_transcriber/releases/latest/download/lecture-transcriber.zip)** 후 압축을 풉니다.
-2. Chrome에서 `chrome://extensions` 를 열고 오른쪽 위 **개발자 모드**를 켭니다.
-3. **압축해제된 확장 프로그램을 로드합니다** → 압축을 푼 `lecture-transcriber` 폴더를 선택합니다.
-4. 툴바의 퍼즐 아이콘에서 **Lecture Transcriber**를 고정해 두면 편합니다.
+**English** · [한국어](README.ko.md)
 
-업데이트: 새 zip을 받아 같은 폴더에 덮어쓰고 `chrome://extensions`에서 ↻(새로고침)을 누르세요. API 키와 스크립트는 그대로 남습니다.
+</div>
 
-Chrome 116 이상이 필요합니다.
+<p align="center">
+  <img src="docs/store/screenshot-1.png" width="720" alt="Lecture queue and progress" />
+</p>
 
-## API 키
+> Screenshots are the real popup UI rendered with demo data.
 
-| 서비스 | 발급 | 비용 |
+## Features
+
+- **One click** — click the video on a lecture page and the extension downloads the source (HLS `.m3u8` or `.mp4`), extracts only the audio and transcribes it with Whisper. The video does **not** need to play.
+- **YouTube support** — for YouTube it fetches the video's existing captions (manual or auto-generated). It finishes in seconds and needs no API key.
+- **Many lectures at once** — audio is downloaded as soon as you add a lecture, so you can close the lecture window right away. Transcription runs in the order added.
+- **Export** — `.txt` (timestamps), `.txt` (text only), `.srt`, `.vtt`, copy to clipboard, merge finished lectures into one named file, optional "ask where to save".
+- **Free to start** — [Groq](https://console.groq.com/keys)'s free tier covers roughly 16 hours of audio per day. You can add several keys.
+- **Your data stays in your browser** — API keys and transcripts are stored in `chrome.storage.local` only. See the [Privacy Policy](docs/PRIVACY.md).
+
+## Install
+
+### Chrome Web Store
+Coming soon.
+
+### Manual install (developer mode)
+
+1. **[⬇️ Download lecture-transcriber.zip](https://github.com/efforthye/chrome_lecture_transcriber/releases/latest/download/lecture-transcriber.zip)** and unzip it. (If you cloned the repo, use the `extension` folder.)
+2. Open `chrome://extensions` and turn on **Developer mode** (top right).
+3. Click **Load unpacked** and select the folder that contains `manifest.json`.
+4. Pin **Lecture Transcriber** from the puzzle-piece menu for quick access.
+
+To update, unzip the new release over the same folder and press ↻ on `chrome://extensions`. Your API keys and transcripts are kept. Requires Chrome 116 or later.
+
+## How to use
+
+### 1. Add an API key (once; skip this if you only use YouTube)
+
+Open the extension → **키 설정 (Key settings)**, choose a provider and paste your key.
+
+| Provider | Get a key | Cost |
 |---|---|---|
-| **Groq** (기본값) | https://console.groq.com/keys → Create API Key (`gsk_...`) | 무료 한도 내 무료 (카드 등록 불필요) |
-| OpenAI | https://platform.openai.com/api-keys (`sk-...`) + 결제 수단 등록 | 오디오 1분당 $0.006 |
+| **Groq** (default) | https://console.groq.com/keys → Create API Key (`gsk_...`) | Free within limits, no card needed |
+| OpenAI | https://platform.openai.com/api-keys (`sk-...`) + a payment method | $0.006 per audio minute |
 
-둘 다 Whisper 모델을 씁니다. OpenAI는 `whisper-1`을 씁니다.
+With Groq the extension uses `whisper-large-v3` first and falls back to `whisper-large-v3-turbo` when the free limit is hit. Limits are tracked per model (about 2 hours of audio per hour and 8 hours per day each), so roughly 16 hours a day are free. If both are exhausted it waits and resumes automatically. Check exact limits on [Groq's limits page](https://console.groq.com/settings/limits).
 
-Groq은 `whisper-large-v3`를 먼저 쓰고, 무료 한도에 걸리면 `whisper-large-v3-turbo`로 자동으로 넘어갑니다. 무료 한도는 모델마다 따로 잡혀서(각각 1시간에 오디오 약 2시간, 하루 약 8시간) 하루 약 16시간까지 무료로 변환할 수 있습니다. 두 모델이 모두 한도에 걸리면 풀릴 때까지 기다렸다가 이어서 변환합니다. 정확한 한도는 https://console.groq.com/settings/limits 에서 확인하세요.
+You can add several keys with **+ Add key**; invalid keys are skipped. Keys from the same account share one limit. Pooling several accounts to exceed a limit may violate Groq's terms.
 
-API 키는 설정의 **+ 키 추가** 버튼으로 여러 개 넣고 **−** 버튼으로 지울 수 있습니다. large-v3를 모든 키에서 먼저 쓰고, 다 막히면 turbo로 넘어갑니다. 유효하지 않은 키는 건너뜁니다. 같은 계정에서 만든 키는 한도를 공유하므로 늘어나지 않습니다. 여러 계정의 사용량을 합쳐 한도를 넘기는 것은 Groq 이용 정책에 어긋날 수 있으니 주의하세요.
+### 2. Regular lecture sites (HLS / mp4)
 
-팝업에는 이 브라우저에서 보낸 오디오 양을 기준으로 최근 1시간·24시간 사용량과 오늘 남은 무료 사용량(추정치)이 표시됩니다. 계정 전체의 실제 사용량은 GroqCloud 콘솔의 Usage 메뉴에서 볼 수 있습니다.
+1. Open the lecture page, open the extension, pick that window under **Window with the video** and press **+ Add lecture**.
+2. When the lecture window comes to the front, click the blue box over the video. (Esc to cancel.)
+3. The audio is downloaded right away, so you can **close the lecture window**. Open the next one and keep adding.
 
-## 사용법
+From the lecture page itself you can also use `Alt+Shift+S` or right-click → "Create transcript for this page's video".
 
-1. 확장 아이콘 → **키 설정**에서 서비스를 고르고 API 키를 넣습니다. (처음 한 번만)
-2. 강의 창을 연 뒤 확장 아이콘 → **영상이 있는 창**에서 강의 창을 고르고 **+ 강의 추가**.
-3. 강의 창으로 전환되면 영상 위 파란 박스를 클릭합니다. (Esc로 취소)
-4. 목록에 추가되는 즉시 오디오를 받아 두므로 **강의 창은 바로 닫아도 됩니다.** 다음 강의 창을 열어 계속 추가하세요. 음성인식은 먼저 추가한 강의부터 2개씩 진행됩니다.
-5. 강의마다 **.txt**로 받거나, **완료된 강의 모두 .txt 다운로드**로 한 번에 받습니다. **중지**·**삭제**·**다시**로 강의별로 관리할 수 있습니다.
+### 3. YouTube
 
-강의 창에서 바로 추가하려면 `Option+Shift+S` 또는 우클릭 → "이 페이지 영상 스크립트 만들기".
+<p align="center">
+  <img src="docs/store/screenshot-2.png" width="620" alt="Fetching YouTube captions" />
+</p>
 
-### 유튜브
+1. Open a YouTube video page (`youtube.com/watch?v=...`).
+2. **Click the video once (play it)** so YouTube loads its captions.
+3. Open the extension and press **+ Add lecture**. No need to click a blue box.
 
-유튜브 영상(`youtube.com/watch?v=...`)도 됩니다. 영상 주소(링크)의 페이지를 연 뒤 **영상을 한 번 클릭**(재생)하고, 확장 아이콘 → **+ 강의 추가**를 누르면 됩니다. 영상을 한 번 클릭해야 유튜브가 자막을 불러오므로, 클릭하지 않으면 자막을 가져오지 못할 수 있습니다. 선택 모드의 파란 박스를 클릭할 필요도, API 키도 필요 없습니다. 오디오를 받아 Whisper로 변환하는 대신, 유튜브에 이미 있는 자막(수동 자막 또는 자동 생성 자막)을 가져와 같은 형식의 `.txt`로 만들기 때문에 몇 초 만에 끝납니다. 자막이 없는 영상은 지원하지 않습니다.
+It is added to the list within seconds. This uses the captions YouTube already has instead of transcribing audio, so **videos without captions are not supported**. Auto-generated captions are less accurate than Whisper, especially for names and numbers. If it fails, you get a specific reason (no captions, live stream, unavailable video…), and temporary blocks are retried once automatically.
 
-결과 예시:
+### 4. Export
+
+<p align="center">
+  <img src="docs/store/screenshot-3.png" width="620" alt="Export settings" />
+</p>
+
+Every lecture has **Copy** and **download** buttons, and **Export settings** lets you choose:
+
+| Format | Description |
+|---|---|
+| `.txt` (timestamps) | `[00:01:23] sentence`, the default |
+| `.txt` (text only) | Sentences without timestamps |
+| `.srt` / `.vtt` | Subtitle files for video players and editors |
+
+Turn on **merge finished lectures into one file** to download everything as a single file with a name you choose. (`.srt`/`.vtt` cannot be merged because each lecture's timestamps start at 0.) Turn on **ask where to save** to get a Save dialog every time.
+
+Example output:
 
 ```
-패션과테크놀로지 7-1
+Fashion & Technology 7-1
 https://cn2.hongik.ac.kr/mod/vod/viewer.php?id=1094013
 
-[00:00:03] 오늘은 인조 섬유 두 번째 시간으로 아라미드 섬유부터 살펴보겠습니다.
+[00:00:03] Today is the second session on synthetic fibers, starting with aramid fibers.
 [00:00:11] ...
 ```
 
-## 동작 방식
+## How it works
 
-1. 클릭한 `<video>`의 원본 주소를 찾습니다. `src`가 `blob:`(hls.js 등)이면 페이지가 받아간 `.m3u8` 기록이나 HTML에서 찾습니다.
-2. 오프스크린 문서에서 원본을 내려받습니다.
-   - HLS: 가장 낮은 화질(또는 오디오 전용) 트랙을 골라 세그먼트를 병렬로 받고, AES-128 암호화를 풀고, MPEG-TS에서 오디오만 뽑습니다.
-   - mp4: 파일 전체를 받습니다.
-3. 16kHz 모노로 디코딩해 약 5분 단위로 자릅니다. 문장이 잘리지 않도록 경계 근처에서 가장 조용한 지점을 고릅니다.
-4. 조각마다 Whisper API로 보내고, 조각 시작 시간을 더해 영상 기준 타임스탬프를 만듭니다. 다운로드와 변환은 동시에 진행됩니다.
+1. Finds the source URL of the clicked `<video>`. If `src` is a `blob:` URL (hls.js etc.), it looks in the page's network history and HTML for the `.m3u8`.
+2. Downloads the source in an offscreen document.
+   - HLS: picks the lowest-quality (or audio-only) rendition, downloads segments in parallel, decrypts AES-128 and extracts the audio from MPEG-TS.
+   - mp4: downloads the whole file.
+3. Decodes to 16 kHz mono and splits into ~5 minute chunks, cutting at the quietest point near each boundary so sentences are not split.
+4. Sends each chunk to the Whisper API and adds the chunk's start time to produce video-based timestamps. Downloading and transcribing run concurrently.
 
-유튜브는 위 방식(HLS/mp4 다운로드)을 쓰지 않습니다. 유튜브는 `.m3u8` 없이 자체 스트리밍(서명·PO Token 필요)을 쓰기 때문입니다. 대신 다음 순서로 자막을 찾습니다.
+**YouTube** has no `.m3u8`, and its audio URLs need signatures and PO Tokens, so the steps above cannot be used. The extension looks for captions instead, in this order:
 
-1. 플레이어가 가진 자막 트랙(`captionTracks`)의 `timedtext` 주소로 받기
-2. 자막을 잠깐 켜서 플레이어가 직접 보내는 `timedtext` 요청(PO Token 포함)을 다시 받기
-3. 위가 막히면 "스크립트 표시" 패널을 열어 텍스트와 시간을 읽기
+1. The `timedtext` URL of the player's `captionTracks`
+2. Briefly turning captions on and re-fetching the `timedtext` request the player itself sends (it carries the PO Token)
+3. If both are blocked, opening the "Show transcript" panel and reading its text and times
 
-## 주의
+## Notes
 
-- 유튜브 자동 생성 자막은 Whisper보다 정확도가 떨어질 수 있습니다. 특히 한국어 고유명사가 그렇습니다.
+- If the video URL isn't found, play the video once and try again (the player has to request the playlist first).
+- DRM-protected videos (Widevine etc.) can't be downloaded.
+- mp4 sources are loaded into memory whole, so very large files (over ~1 GB) may be slow or fail.
+- API keys and transcripts live only in `chrome.storage.local`; audio goes only to the speech-to-text API you chose. See the [Privacy Policy](docs/PRIVACY.md).
+- Use lecture videos and transcripts for personal study only. You are responsible for respecting the terms of service and copyright of the sites you use.
+- The extension UI is currently in Korean.
 
-- 영상 주소를 못 찾으면 영상을 한 번 재생했다가 다시 시도하세요. (플레이어가 재생목록을 받아가야 주소가 남습니다.)
-- DRM(Widevine 등)이 걸린 영상은 받을 수 없습니다.
-- mp4 원본은 전체를 메모리에 올리므로 아주 긴 영상(1GB 이상)은 느리거나 실패할 수 있습니다.
-- API 키와 스크립트는 브라우저의 `chrome.storage.local`에만 저장되고, 오디오는 선택한 음성인식 API로만 전송됩니다.
-- 강의 영상과 스크립트는 개인 학습 용도로만 사용하세요.
+## Docs
+
+- [Privacy Policy](docs/PRIVACY.md) · [개인정보처리방침](docs/PRIVACY.ko.md)
+- [Chrome Web Store listing material](docs/STORE_LISTING.md) (descriptions, permission justifications, images)
+
+## License
+
+See [LICENSE](LICENSE).
