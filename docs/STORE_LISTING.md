@@ -7,7 +7,7 @@ Copy-paste material for the Chrome Web Store developer dashboard. Fees and form 
 - Category: Education (or Productivity)
 - Package: zip the **contents** of the `extension/` folder (so `manifest.json` is at the zip root).
 
-## Images (`docs/store/`)
+## Images (`docs/store/ko/` and `docs/store/en/`)
 
 | File | Use |
 |---|---|
@@ -16,7 +16,7 @@ Copy-paste material for the Chrome Web Store developer dashboard. Fees and form 
 | `promo-marquee-1400x560.png` | Marquee promo tile (optional) |
 | `screenshot-1.png` … `screenshot-4.png` | Screenshots, 1280×800 |
 
-The screenshots are the real popup UI rendered with demo data (no real user data or real video titles). Replace them with real captures if you prefer.
+Each folder has the same set in Korean and English; upload the set that matches the listing language. The screenshots are the real popup UI rendered with demo data (no real user data, real video titles or real API keys). Screenshot 4 shows several keys registered. Replace them with real captures if you prefer.
 
 ## Short description (max 132 characters)
 
@@ -56,7 +56,7 @@ Notes
 • DRM-protected videos cannot be downloaded.
 • YouTube auto-captions are less accurate than Whisper, especially for names and numbers.
 • Use for personal study. You are responsible for following the terms of service and copyright of the sites you use.
-• The interface is currently in Korean.
+• The interface is available in Korean and English (Key settings → Interface language).
 
 ### 한국어
 
@@ -86,7 +86,7 @@ Groq 키(넉넉한 무료 한도, 카드 불필요)나 OpenAI 키를 직접 사�
 • DRM이 걸린 영상은 받을 수 없습니다.
 • 유튜브 자동 자막은 Whisper보다 정확도가 낮아 고유명사·숫자에서 오인식이 있을 수 있습니다.
 • 개인 학습 용도로만 사용하세요. 이용하는 사이트의 약관과 저작권을 지킬 책임은 사용자에게 있습니다.
-• 인터페이스는 현재 한국어입니다.
+• 인터페이스는 한국어와 English를 지원합니다 (키 설정 → 인터페이스 언어).
 
 ## Single purpose (단일 목적)
 
