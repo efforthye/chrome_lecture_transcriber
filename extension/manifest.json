@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Lecture Transcriber",
   "description": "강의 영상을 클릭하면 오디오를 받아 Whisper로 타임스탬프 스크립트(.txt)를 만들고, 유튜브는 자막을 바로 가져옵니다.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

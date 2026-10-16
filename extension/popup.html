@@ -46,9 +46,22 @@
   <div id="jobs" class="jobs"></div>
 
   <section id="previewBox" hidden>
-    <div class="meta"><span id="title"></span><span id="count"></span></div>
+    <div class="meta"><span id="title"></span><span id="count"></span><button id="copyPreview" type="button" class="mini">복사</button></div>
     <pre id="preview"></pre>
   </section>
+
+  <details id="exportBox" class="export">
+    <summary>내보내기 설정</summary>
+    <label>형식
+      <select id="format"></select>
+    </label>
+    <label class="check"><input type="checkbox" id="merge" /> 완료된 강의를 하나의 파일로 합치기</label>
+    <p id="mergeNote" class="note" hidden>자막 형식(.srt/.vtt)은 강의마다 시간이 0부터 시작해서 합칠 수 없어요.</p>
+    <label id="bundleRow" hidden>합친 파일 이름
+      <input id="bundleName" placeholder="transcripts" autocomplete="off" />
+    </label>
+    <label class="check"><input type="checkbox" id="askWhere" /> 저장할 때마다 위치·이름 묻기</label>
+  </details>
 
   <div class="actions">
     <button id="downloadAll" disabled>완료된 강의 모두 .txt 다운로드</button>

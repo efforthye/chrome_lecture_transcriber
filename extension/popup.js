@@ -31,10 +31,61 @@ function cleanSegments(segments) {
 
 const toLines = (segments) => cleanSegments(segments).map((s) => `[${fmt(s.start)}] ${s.text}`);
 
+// ---------- 내보내기 형식 ----------
+
+const FORMATS = {
+  txt: { ext: 'txt', label: '.txt (타임스탬프)' },
+  plain: { ext: 'txt', label: '.txt (텍스트만)' },
+  srt: { ext: 'srt', label: '.srt (자막 파일)' },
+  vtt: { ext: 'vtt', label: '.vtt (웹 자막)' },
+};
+
+function cueTime(sec, sep) {
+  const ms = Math.round(Math.max(0, sec) * 1000);
+  const p = (n, w = 2) => String(n).padStart(w, '0');
+  return `${p(Math.floor(ms / 3_600_000))}:${p(Math.floor((ms % 3_600_000) / 60_000))}:${p(Math.floor((ms % 60_000) / 1000))}${sep}${p(ms % 1000, 3)}`;
+}
+
+function buildText(job, segments, format) {
+  const list = cleanSegments(segments);
+  const cues = (sep) =>
+    list.map((s, i) => {
+      const next = list[i + 1];
+      let end = Math.max(s.end || 0, s.start + 0.5);
+      if (next && end > next.start) end = Math.max(next.start, s.start + 0.1);
+      return { range: `${cueTime(s.start, sep)} --> ${cueTime(end, sep)}`, text: s.text };
+    });
+  if (format === 'srt') return cues(',').map((c, i) => `${i + 1}\n${c.range}\n${c.text}\n`).join('\n');
+  if (format === 'vtt') return `WEBVTT\n\n${cues('.').map((c) => `${c.range}\n${c.text}\n`).join('\n')}`;
+  const body = format === 'plain' ? list.map((s) => s.text) : toLines(segments);
+  return [job.title, job.url, '', ...body, ''].join('\n');
+}
+
+async function getExportOptions() {
+  const { settings = {} } = await chrome.storage.local.get('settings');
+  const format = FORMATS[settings.exportFormat] ? settings.exportFormat : 'txt';
+  return {
+    format,
+    // 자막 형식은 강의마다 시간이 0부터 시작해서 하나로 합칠 수 없다
+    merge: !!settings.exportMerge && (format === 'txt' || format === 'plain'),
+    name: settings.exportName || '',
+    askWhere: !!settings.askWhere,
+  };
+}
+
+async function jobText(job, format) {
+  const key = `seg:${job.id}`;
+  const { [key]: segs = [] } = await chrome.storage.local.get(key);
+  return segs.length ? buildText(job, segs, format) : '';
+}
+
 const JOB_LABEL = { queued: '대기', working: '변환 중', done: '완료', error: '실패', canceled: '중지됨' };
 
 let selectedId = null;
 let lastData = {};
+let targetUrls = new Map();
+
+const targetIsYouTube = () => /^https?:\/\/(www\.|m\.|music\.)?youtube\.com\//i.test(targetUrls.get(Number($('target').value)) || '');
 
 const send = (type, extra = {}) => chrome.runtime.sendMessage({ type, ...extra });
 
@@ -48,7 +99,7 @@ function progressText(p = {}) {
   return parts.join(' · ');
 }
 
-function jobCard(job) {
+function jobCard(job, format = 'txt') {
   const p = job.progress || {};
   const total = p.totalSec || 0;
   const dl = total ? (p.downloadedSec || 0) / total : p.totalBytes ? (p.downloadedBytes || 0) / p.totalBytes : 0;
@@ -95,7 +146,7 @@ function jobCard(job) {
     if (cls) b.className = cls;
     b.addEventListener('click', (e) => {
       e.stopPropagation();
-      onClick();
+      onClick(b);
     });
     actions.append(b);
   };
@@ -103,7 +154,10 @@ function jobCard(job) {
   count.className = 'job-count';
   count.textContent = job.count ? `${job.count}문장` : '';
   actions.append(count);
-  if (job.count) btn('.txt', () => downloadJobs([job]));
+  if (job.count) {
+    btn('복사', (b) => copyJob(job, b));
+    btn(`.${FORMATS[format].ext}`, () => downloadJobs([job]));
+  }
   if (job.state === 'working' || job.state === 'queued') btn('중지', () => send('cancel-job', { jobId: job.id }));
   if ((job.state === 'error' || job.state === 'canceled') && job.source) btn('다시', () => send('retry-job', { jobId: job.id }));
   btn('삭제', () => {
@@ -128,11 +182,14 @@ async function render(data) {
   $('pick').hidden = picking;
   $('targetRow').hidden = picking;
   $('pickStop').hidden = !picking;
+  const format = FORMATS[data.settings?.exportFormat] ? data.settings.exportFormat : 'txt';
   $('hint').textContent = picking
     ? '강의 창에서 영상 위를 클릭하세요. (Esc로 취소)'
-    : jobs.length
-      ? '추가하면 바로 오디오를 받아 두니 강의 창은 닫아도 돼요. 변환은 2개씩 차례로 진행돼요.'
-      : '창을 고르고 + 강의 추가를 누른 뒤, 그 창에서 영상을 클릭하세요.';
+    : targetIsYouTube()
+      ? '유튜브는 영상을 한 번 재생(클릭)한 뒤 + 강의 추가를 누르세요. 자막을 바로 가져오니 API 키도 필요 없어요.'
+      : jobs.length
+        ? '추가하면 바로 오디오를 받아 두니 강의 창은 닫아도 돼요. 변환은 2개씩 차례로 진행돼요.'
+        : '창을 고르고 + 강의 추가를 누른 뒤, 그 창에서 영상을 클릭하세요.';
   $('error').hidden = !status.error;
   $('error').textContent = status.error || '';
 
@@ -141,7 +198,8 @@ async function render(data) {
   if (!jobs.some((j) => j.id === selectedId)) {
     selectedId = (ordered.find((j) => j.state === 'working') || ordered[0])?.id ?? null;
   }
-  $('jobs').replaceChildren(...ordered.map(jobCard));
+  $('jobs').replaceChildren(...ordered.map((j) => jobCard(j, format)));
+  $('downloadAll').textContent = `완료된 강의 모두 .${FORMATS[format].ext} 다운로드`;
 
   // 선택한 강의 미리보기 (목록 바로 아래)
   const job = jobs.find((j) => j.id === selectedId);
@@ -160,18 +218,39 @@ async function render(data) {
 
 const safeName = (s) => (s || 'transcript').replace(/[\\/:*?"<>|]/g, '_').trim();
 
+const saveText = (text, filename, askWhere) =>
+  chrome.downloads.download({
+    url: `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`,
+    filename,
+    saveAs: askWhere,
+    conflictAction: 'uniquify',
+  });
+
+// 선택한 형식으로 내려받는다. "하나로 합치기"를 켜면 파일 이름을 직접 정한 한 파일로 받는다.
 async function downloadJobs(jobs) {
+  const { format, merge, name, askWhere } = await getExportOptions();
+  const { ext } = FORMATS[format];
+  const texts = [];
   for (const job of jobs) {
-    const key = `seg:${job.id}`;
-    const { [key]: segs = [] } = await chrome.storage.local.get(key);
-    if (!segs.length) continue;
-    const text = [job.title, job.url, '', ...toLines(segs), ''].join('\n');
-    await chrome.downloads.download({
-      url: `data:text/plain;charset=utf-8,${encodeURIComponent(text)}`,
-      filename: `${safeName(job.title)}.txt`,
-      conflictAction: 'uniquify',
-    });
+    const text = await jobText(job, format);
+    if (text) texts.push({ job, text });
   }
+  if (!texts.length) return;
+  if (merge && texts.length > 1) {
+    await saveText(texts.map((t) => t.text).join('\n\n----------------------------------------\n\n'), `${safeName(name || 'transcripts')}.${ext}`, askWhere);
+    return;
+  }
+  for (const { job, text } of texts) await saveText(text, `${safeName(job.title)}.${ext}`, askWhere);
+}
+
+async function copyJob(job, button) {
+  const { format } = await getExportOptions();
+  const text = await jobText(job, format);
+  if (!text) return;
+  await navigator.clipboard.writeText(text);
+  const label = button.textContent;
+  button.textContent = '복사됨';
+  setTimeout(() => (button.textContent = label), 1200);
 }
 
 // Groq 무료 한도 (모델별, 오디오 초). 실제 값은 console.groq.com/settings/limits 기준
@@ -257,6 +336,7 @@ async function loadTargets() {
     }
   }
   items.sort((a, b) => b.score - a.score || (b.t.id === current?.id) - (a.t.id === current?.id));
+  targetUrls = new Map(items.map(({ t }) => [t.id, t.url]));
   const select = $('target');
   select.replaceChildren(
     ...items.map(({ t, isPopup }) => {
@@ -267,6 +347,7 @@ async function loadTargets() {
     })
   );
   $('pick').disabled = !items.length;
+  render(lastData);
 }
 
 async function init() {
@@ -344,6 +425,45 @@ async function init() {
     save();
   });
 
+  // 내보내기 설정
+  $('format').replaceChildren(
+    ...Object.entries(FORMATS).map(([value, { label }]) => Object.assign(document.createElement('option'), { value, textContent: label }))
+  );
+  $('format').value = FORMATS[settings.exportFormat] ? settings.exportFormat : 'txt';
+  $('merge').checked = !!settings.exportMerge;
+  $('bundleName').value = settings.exportName || '';
+  $('askWhere').checked = !!settings.askWhere;
+  const syncExport = () => {
+    const mergeable = $('format').value === 'txt' || $('format').value === 'plain';
+    $('merge').disabled = !mergeable;
+    $('mergeNote').hidden = mergeable;
+    $('bundleRow').hidden = !(mergeable && $('merge').checked);
+  };
+  syncExport();
+  $('format').addEventListener('change', () => {
+    settings.exportFormat = $('format').value;
+    syncExport();
+    save();
+  });
+  $('merge').addEventListener('change', () => {
+    settings.exportMerge = $('merge').checked;
+    syncExport();
+    save();
+  });
+  $('bundleName').addEventListener('input', () => {
+    settings.exportName = $('bundleName').value;
+    save();
+  });
+  $('askWhere').addEventListener('change', () => {
+    settings.askWhere = $('askWhere').checked;
+    save();
+  });
+  $('target').addEventListener('change', () => render(lastData));
+  $('copyPreview').addEventListener('click', async () => {
+    const job = (lastData.jobs || []).find((j) => j.id === selectedId);
+    if (job) await copyJob(job, $('copyPreview'));
+  });
+
   $('pick').addEventListener('click', async () => {
     await save();
     $('pick').disabled = true;
@@ -355,13 +475,18 @@ async function init() {
       $('pick').disabled = false;
       return;
     }
+    const youtube = targetIsYouTube();
+    if (youtube) $('pick').textContent = '자막 가져오는 중…';
     const res = await send('pick', { tabId: tab.id });
     $('pick').disabled = false;
+    $('pick').textContent = '+ 강의 추가';
     if (!res?.ok) {
       $('error').hidden = false;
       $('error').textContent = res?.error || '시작하지 못했습니다.';
       return;
     }
+    // 유튜브는 자막을 바로 가져와 목록에 추가되므로 창을 옮기지 않는다
+    if (youtube) return;
     // 영상이 있는 창/탭으로 전환하고 팝업을 닫아 바로 영상을 클릭할 수 있게 한다
     await chrome.tabs.update(tab.id, { active: true });
     await chrome.windows.update(tab.windowId, { focused: true });

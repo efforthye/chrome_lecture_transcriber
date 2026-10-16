@@ -62,6 +62,13 @@ a { color: var(--primary); }
 .key-row button { flex: none; width: 32px; padding: 0; font-size: 16px; line-height: 1; }
 button.add { margin-top: 6px; width: 100%; padding: 6px; font-size: 12px; border-style: dashed; background: transparent; color: var(--muted); }
 
+/* 내보내기 설정 */
+.export { margin: 0 0 10px; }
+label.check { display: flex; align-items: center; gap: 6px; color: var(--fg); }
+label.check input { display: inline-block; width: auto; margin: 0; }
+.export .note { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+.meta button.mini { flex: none; padding: 0 8px; font-size: 11px; border-radius: 6px; }
+
 /* 사용량 카드 */
 .usage { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 12px; color: var(--muted); }
 .usage-head { display: flex; justify-content: space-between; align-items: baseline; }

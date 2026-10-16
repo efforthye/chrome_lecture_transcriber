@@ -150,10 +150,15 @@ const isYouTube = (url) => /^https?:\/\/(www\.|m\.|music\.)?youtube\.com\//i.tes
 
 // 페이지(MAIN 월드)에서 실행된다. 직렬화되어 주입되므로 바깥 변수를 쓰면 안 된다.
 async function fetchYouTubeCaptions(lang) {
+  // 실패하면 { code }를 돌려준다. 코드별 안내 문구는 background 쪽(YT_ERRORS)에 있다.
+  if (!/^\/(watch|shorts\/|live\/)/.test(location.pathname)) return { code: 'not-video' };
   const videoId = new URLSearchParams(location.search).get('v') || location.pathname.split('/').filter(Boolean).pop();
   const player = document.querySelector('#movie_player');
   let resp = player?.getPlayerResponse?.();
   if (resp?.videoDetails?.videoId !== videoId) resp = null;
+  if (resp?.videoDetails?.isLive) return { code: 'live' };
+  const playable = resp?.playabilityStatus;
+  if (playable?.status && playable.status !== 'OK') return { code: 'unavailable', detail: playable.reason || playable.status };
   const duration = Number(resp?.videoDetails?.lengthSeconds) || null;
 
   const pickTrack = (tracks) => {
@@ -251,8 +256,10 @@ async function fetchYouTubeCaptions(lang) {
         [...document.querySelectorAll('ytd-structured-description-content-renderer button, #description button')].find((b) =>
           /transcript|스크립트/i.test(b.textContent)
         );
-      btn?.click();
-      for (let i = 0; i < 40 && !rows().length; i++) await sleep(250);
+      if (btn) {
+        btn.click();
+        for (let i = 0; i < 40 && !rows().length; i++) await sleep(250);
+      }
     }
     const toSec = (t) => t.trim().split(':').reduce((n, p) => n * 60 + Number(p), 0);
     const list = [...rows()]
@@ -264,19 +271,40 @@ async function fetchYouTubeCaptions(lang) {
     segments = list.map((s, i) => ({ ...s, end: list[i + 1]?.start ?? s.start + 5 }));
   }
 
-  if (!segments.length) return { error: '이 영상에서 자막/스크립트를 찾지 못했습니다. 영상을 한 번 클릭(재생)한 뒤 다시 시도해 보세요. 자막이 없는 영상일 수도 있습니다.' };
+  if (!segments.length) {
+    // 자막 트랙은 있는데 못 받았다면 막힌 것, 트랙 자체가 없으면 자막 없는 영상, 플레이어 정보가 없으면 아직 준비 전
+    return { code: tracks?.length ? 'blocked' : resp ? 'no-captions' : 'not-ready' };
+  }
   return { segments, duration, title: document.title.replace(/ - YouTube$/, '') };
 }
 
-async function onYouTubePicked(tab, frameId) {
+const YT_ERRORS = {
+  'not-video': '유튜브 영상 페이지(youtube.com/watch…)를 연 탭에서 시도해 주세요.',
+  live: '라이브 방송은 지원하지 않습니다. 방송이 끝난 뒤 다시 시도해 주세요.',
+  unavailable: '유튜브에서 재생할 수 없는 영상입니다 (비공개·멤버십·연령 제한 등).',
+  'no-captions': '이 영상에는 자막이 없어서 스크립트를 만들 수 없습니다.',
+  'not-ready': '영상 정보를 아직 불러오지 못했습니다. 영상을 한 번 재생(클릭)한 뒤 다시 시도해 주세요.',
+  blocked: '자막을 가져오지 못했습니다. 유튜브가 요청을 막은 것 같습니다. 영상을 한 번 재생한 뒤 잠시 후 다시 시도해 주세요.',
+};
+
+async function onYouTubePicked(tab) {
   const settings = await getSettings();
-  const [{ result } = {}] = await chrome.scripting.executeScript({
-    target: { tabId: tab.id },
-    world: 'MAIN',
-    func: fetchYouTubeCaptions,
-    args: [settings.language],
-  });
-  if (!result || result.error) throw new Error(result?.error || '자막을 가져오지 못했습니다.');
+  // 일시적으로 막히거나 아직 준비 전이면 잠깐 기다렸다가 한 번 더 시도한다
+  let result;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    [{ result } = {}] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: 'MAIN',
+      func: fetchYouTubeCaptions,
+      args: [settings.language],
+    });
+    if (!result?.code || !['blocked', 'not-ready'].includes(result.code)) break;
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  if (!result || result.code) {
+    const base = YT_ERRORS[result?.code] || '자막을 가져오지 못했습니다.';
+    throw new Error(result?.detail ? `${base} (${result.detail})` : base);
+  }
 
   const id = crypto.randomUUID();
   await chrome.storage.local.set({ [`seg:${id}`]: result.segments });
