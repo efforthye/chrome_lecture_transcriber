@@ -144,7 +144,177 @@ async function doSchedule() {
   }
 }
 
+// ---------- 유튜브: 영상 대신 이미 있는 자막을 가져온다 ----------
+
+const isYouTube = (url) => /^https?:\/\/(www\.|m\.|music\.)?youtube\.com\//i.test(url || '');
+
+// 페이지(MAIN 월드)에서 실행된다. 직렬화되어 주입되므로 바깥 변수를 쓰면 안 된다.
+async function fetchYouTubeCaptions(lang) {
+  const videoId = new URLSearchParams(location.search).get('v') || location.pathname.split('/').filter(Boolean).pop();
+  const player = document.querySelector('#movie_player');
+  let resp = player?.getPlayerResponse?.();
+  if (resp?.videoDetails?.videoId !== videoId) resp = null;
+  const duration = Number(resp?.videoDetails?.lengthSeconds) || null;
+
+  const pickTrack = (tracks) => {
+    if (!tracks?.length) return null;
+    const same = (t) => (t.languageCode || '').split('-')[0] === lang;
+    return (
+      tracks.find((t) => same(t) && t.kind !== 'asr') ||
+      tracks.find((t) => same(t)) ||
+      tracks.find((t) => t.kind !== 'asr') ||
+      tracks[0]
+    );
+  };
+  // 자막은 다음 줄이 시작된 뒤에도 화면에 남도록 시간이 겹쳐 있다. 겹치면 목록 쪽에서 중복으로 보고 지우므로
+  // 끝 시간을 다음 줄 시작에 맞춰 자른다.
+  const parse = (json) => {
+    const list = (json?.events || [])
+      .filter((e) => e.segs)
+      .map((e) => ({
+        start: (e.tStartMs || 0) / 1000,
+        end: ((e.tStartMs || 0) + (e.dDurationMs || 0)) / 1000,
+        text: e.segs.map((s) => s.utf8).join('').replace(/\s*\n\s*/g, ' ').trim(),
+      }))
+      .filter((s) => s.text)
+      .sort((a, b) => a.start - b.start);
+    list.forEach((s, i) => {
+      if (list[i + 1]) s.end = Math.min(s.end, list[i + 1].start);
+      s.end = Math.max(s.end, s.start);
+    });
+    return list;
+  };
+  const download = async (track) => {
+    const u = new URL(track.baseUrl, location.origin);
+    u.searchParams.set('fmt', 'json3');
+    const res = await fetch(u, { credentials: 'include' });
+    const text = res.ok ? await res.text() : '';
+    return text ? parse(JSON.parse(text)) : [];
+  };
+
+  // 1) 플레이어에 이미 들어있는 자막 트랙
+  let tracks = resp?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  // 2) 없으면 InnerTube(ANDROID 클라이언트)로 다시 요청 — PO Token 없이도 자막 주소를 주는 경우가 많다
+  if (!tracks?.length) {
+    try {
+      const key = window.ytcfg?.get?.('INNERTUBE_API_KEY');
+      const r = await fetch(`/youtubei/v1/player?key=${key}&prettyPrint=false`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoId,
+          context: { client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 30, hl: lang } },
+        }),
+      });
+      tracks = (await r.json())?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+    } catch {}
+  }
+  let segments = [];
+  try {
+    if (tracks?.length) segments = await download(pickTrack(tracks));
+  } catch {}
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // 3) 플레이어가 자막을 켤 때 직접 보내는 timedtext 요청(PO Token 포함)의 주소를 그대로 다시 받는다
+  if (!segments.length && player?.toggleSubtitlesOn) {
+    const wasOn = !!player.getOption?.('captions', 'track')?.languageCode;
+    const seen = () =>
+      performance
+        .getEntriesByType('resource')
+        .map((e) => e.name)
+        .filter((n) => n.includes('/api/timedtext') && n.includes(`v=${videoId}`) && /[?&]pot=/.test(n));
+    try {
+      if (!wasOn) player.toggleSubtitlesOn();
+      for (let i = 0; i < 24 && !seen().length; i++) await sleep(250);
+      const url = seen().at(-1);
+      if (url) {
+        const u = new URL(url);
+        u.searchParams.set('fmt', 'json3');
+        u.searchParams.delete('tlang');
+        const res = await fetch(u, { credentials: 'include' });
+        const text = res.ok ? await res.text() : '';
+        if (text) segments = parse(JSON.parse(text));
+      }
+    } catch {}
+    if (!wasOn) player.toggleSubtitlesOff?.();
+  }
+
+  // 4) 그래도 안 되면 유튜브의 "스크립트" 패널을 직접 열어 읽는다
+  if (!segments.length) {
+    const rows = () => document.querySelectorAll('ytd-transcript-segment-renderer');
+    if (!rows().length) {
+      document.querySelector('ytd-text-inline-expander #expand, #description-inline-expander #expand')?.click();
+      await sleep(400);
+      const btn =
+        document.querySelector('ytd-video-description-transcript-section-renderer button') ||
+        [...document.querySelectorAll('ytd-structured-description-content-renderer button, #description button')].find((b) =>
+          /transcript|스크립트/i.test(b.textContent)
+        );
+      btn?.click();
+      for (let i = 0; i < 40 && !rows().length; i++) await sleep(250);
+    }
+    const toSec = (t) => t.trim().split(':').reduce((n, p) => n * 60 + Number(p), 0);
+    const list = [...rows()]
+      .map((r) => ({
+        start: toSec(r.querySelector('.segment-timestamp')?.textContent || ''),
+        text: (r.querySelector('.segment-text')?.textContent || '').replace(/\s+/g, ' ').trim(),
+      }))
+      .filter((s) => s.text && Number.isFinite(s.start));
+    segments = list.map((s, i) => ({ ...s, end: list[i + 1]?.start ?? s.start + 5 }));
+  }
+
+  if (!segments.length) return { error: '이 영상에서 자막/스크립트를 찾지 못했습니다. 영상을 한 번 클릭(재생)한 뒤 다시 시도해 보세요. 자막이 없는 영상일 수도 있습니다.' };
+  return { segments, duration, title: document.title.replace(/ - YouTube$/, '') };
+}
+
+async function onYouTubePicked(tab, frameId) {
+  const settings = await getSettings();
+  const [{ result } = {}] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    world: 'MAIN',
+    func: fetchYouTubeCaptions,
+    args: [settings.language],
+  });
+  if (!result || result.error) throw new Error(result?.error || '자막을 가져오지 못했습니다.');
+
+  const id = crypto.randomUUID();
+  await chrome.storage.local.set({ [`seg:${id}`]: result.segments });
+  const duplicate = await updateJobs((jobs) => {
+    const same = jobs.find((j) => j.url === tab.url && j.state !== 'error' && j.state !== 'canceled');
+    if (same) return same;
+    jobs.push({
+      id,
+      title: result.title || tab.title,
+      url: tab.url,
+      source: { kind: 'youtube-captions', url: tab.url },
+      state: 'done',
+      progress: result.duration ? { totalSec: result.duration } : {},
+      count: result.segments.length,
+      createdAt: Date.now(),
+      finishedAt: Date.now(),
+    });
+  });
+  if (duplicate) await chrome.storage.local.remove(`seg:${id}`);
+  await setStatus({
+    state: 'idle',
+    error: duplicate ? `"${duplicate.title}"은(는) 이미 목록에 있습니다.` : null,
+  });
+}
+
 async function startPick(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  if (isYouTube(tab.url)) {
+    // 유튜브는 자막을 바로 가져오므로 API 키도, 영상 클릭도 필요 없다
+    await setStatus({ state: 'idle', error: null });
+    try {
+      await onYouTubePicked(tab);
+    } catch (e) {
+      await setStatus({ state: 'idle', error: e.message });
+      throw e;
+    }
+    return;
+  }
   const settings = await getSettings();
   if (!settings.apiKeys.length) throw new Error('키 설정에서 API 키를 먼저 입력해 주세요.');
   // 모든 프레임(iframe 포함)에 영상 선택 스크립트 주입
