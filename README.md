@@ -12,7 +12,7 @@
 </div>
 
 <p align="center">
-  <img src="docs/store/ko/screenshot-1.png" width="720" alt="강의 목록과 진행 상황" />
+  <img src="docs/store/ko/1-queue.png" width="720" alt="강의 목록과 진행 상황" />
 </p>
 
 > 스크린샷은 데모 데이터로 실제 팝업 화면을 렌더링한 것입니다.
@@ -57,7 +57,7 @@ Groq은 `whisper-large-v3`를 먼저 쓰고, 무료 한도에 걸리면 `whisper
 키는 **+ 키 추가**로 여러 개 넣을 수 있고, 유효하지 않은 키는 건너뜁니다. 같은 계정에서 만든 키는 한도를 공유하므로 늘어나지 않습니다. 여러 계정의 사용량을 합쳐 한도를 넘기는 것은 Groq 이용 정책에 어긋날 수 있으니 주의하세요.
 
 <p align="center">
-  <img src="docs/store/ko/screenshot-4.png" width="620" alt="API 키 여러 개 등록" />
+  <img src="docs/store/ko/4-keys.png" width="620" alt="API 키 여러 개 등록" />
 </p>
 
 **인터페이스 언어**는 **키 설정 → 인터페이스 언어**에서 한국어 / English로 바꿀 수 있습니다. (기본값은 브라우저 언어를 따릅니다.)
@@ -73,7 +73,7 @@ Groq은 `whisper-large-v3`를 먼저 쓰고, 무료 한도에 걸리면 `whisper
 ### 3. 유튜브
 
 <p align="center">
-  <img src="docs/store/ko/screenshot-2.png" width="620" alt="유튜브 자막 가져오기" />
+  <img src="docs/store/ko/2-youtube.png" width="620" alt="유튜브 자막 가져오기" />
 </p>
 
 1. 유튜브 영상 페이지(`youtube.com/watch?v=...`)를 엽니다.
@@ -85,7 +85,7 @@ Groq은 `whisper-large-v3`를 먼저 쓰고, 무료 한도에 걸리면 `whisper
 ### 4. 내보내기
 
 <p align="center">
-  <img src="docs/store/ko/screenshot-3.png" width="620" alt="내보내기 설정" />
+  <img src="docs/store/ko/3-export.png" width="620" alt="내보내기 설정" />
 </p>
 
 강의마다 **복사**와 **파일 다운로드** 버튼이 있고, **내보내기 설정**에서 다음을 고를 수 있습니다.

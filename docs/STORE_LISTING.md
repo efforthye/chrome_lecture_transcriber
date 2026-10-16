@@ -14,7 +14,7 @@ Copy-paste material for the Chrome Web Store developer dashboard. Fees and form 
 | `extension/icons/icon128.png` | Store icon (128×128) |
 | `promo-small-440x280.png` | Small promo tile (required) |
 | `promo-marquee-1400x560.png` | Marquee promo tile (optional) |
-| `screenshot-1.png` … `screenshot-4.png` | Screenshots, 1280×800 |
+| `1-queue.png`, `2-youtube.png`, `3-export.png`, `4-keys.png` | Screenshots, 1280×800 |
 
 Each folder has the same set in Korean and English; upload the set that matches the listing language. The screenshots are the real popup UI rendered with demo data (no real user data, real video titles or real API keys). Screenshot 4 shows several keys registered. Replace them with real captures if you prefer.
 

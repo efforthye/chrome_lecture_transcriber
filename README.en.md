@@ -12,7 +12,7 @@ Click the video once. On YouTube, it grabs the existing captions instantly.
 </div>
 
 <p align="center">
-  <img src="docs/store/en/screenshot-1.png" width="720" alt="Lecture queue and progress" />
+  <img src="docs/store/en/1-queue.png" width="720" alt="Lecture queue and progress" />
 </p>
 
 > Screenshots are the real popup UI rendered with demo data.
@@ -57,7 +57,7 @@ With Groq the extension uses `whisper-large-v3` first and falls back to `whisper
 You can add several keys with **+ Add key**; invalid keys are skipped. Keys from the same account share one limit. Pooling several accounts to exceed a limit may violate Groq's terms.
 
 <p align="center">
-  <img src="docs/store/en/screenshot-4.png" width="620" alt="Several API keys registered" />
+  <img src="docs/store/en/4-keys.png" width="620" alt="Several API keys registered" />
 </p>
 
 Change the **interface language** under **Key settings → Interface language** (Korean / English). The default follows your browser language.
@@ -73,7 +73,7 @@ From the lecture page itself you can also use `Alt+Shift+S` or right-click → "
 ### 3. YouTube
 
 <p align="center">
-  <img src="docs/store/en/screenshot-2.png" width="620" alt="Fetching YouTube captions" />
+  <img src="docs/store/en/2-youtube.png" width="620" alt="Fetching YouTube captions" />
 </p>
 
 1. Open a YouTube video page (`youtube.com/watch?v=...`).
@@ -85,7 +85,7 @@ It is added to the list within seconds. This uses the captions YouTube already h
 ### 4. Export
 
 <p align="center">
-  <img src="docs/store/en/screenshot-3.png" width="620" alt="Export settings" />
+  <img src="docs/store/en/3-export.png" width="620" alt="Export settings" />
 </p>
 
 Every lecture has **Copy** and **download** buttons, and **Export settings** lets you choose:
