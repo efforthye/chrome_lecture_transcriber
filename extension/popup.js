@@ -1,9 +1,17 @@
 const $ = (id) => document.getElementById(id);
 
 const PROVIDERS = {
-  groq: { label: 'Groq API 키', link: 'https://console.groq.com/keys' },
-  openai: { label: 'OpenAI API 키', link: 'https://platform.openai.com/api-keys' },
+  groq: { label: 'keyLabelGroq', link: 'https://console.groq.com/keys' },
+  openai: { label: 'keyLabelOpenai', link: 'https://platform.openai.com/api-keys' },
 };
+
+const tr = t; // 탭 변수 t에 가려지는 곳에서 쓰는 별칭
+
+// data-i18n 속성이 붙은 요소의 글자를 현재 언어로 채운다
+function applyI18n() {
+  document.documentElement.lang = LANG;
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+}
 
 function fmt(sec) {
   const s = Math.max(0, Math.floor(sec));
@@ -34,10 +42,10 @@ const toLines = (segments) => cleanSegments(segments).map((s) => `[${fmt(s.start
 // ---------- 내보내기 형식 ----------
 
 const FORMATS = {
-  txt: { ext: 'txt', label: '.txt (타임스탬프)' },
-  plain: { ext: 'txt', label: '.txt (텍스트만)' },
-  srt: { ext: 'srt', label: '.srt (자막 파일)' },
-  vtt: { ext: 'vtt', label: '.vtt (웹 자막)' },
+  txt: { ext: 'txt', label: 'fmtTxt' },
+  plain: { ext: 'txt', label: 'fmtPlain' },
+  srt: { ext: 'srt', label: 'fmtSrt' },
+  vtt: { ext: 'vtt', label: 'fmtVtt' },
 };
 
 function cueTime(sec, sep) {
@@ -79,7 +87,7 @@ async function jobText(job, format) {
   return segs.length ? buildText(job, segs, format) : '';
 }
 
-const JOB_LABEL = { queued: '대기', working: '변환 중', done: '완료', error: '실패', canceled: '중지됨' };
+const JOB_LABEL = { queued: 'jobQueued', working: 'jobWorking', done: 'jobDone', error: 'jobError', canceled: 'jobCanceled' };
 
 let selectedId = null;
 let lastData = {};
@@ -92,10 +100,10 @@ const send = (type, extra = {}) => chrome.runtime.sendMessage({ type, ...extra }
 function progressText(p = {}) {
   const total = p.totalSec || 0;
   const parts = [];
-  if (p.downloadedSec != null && total) parts.push(`추출 ${fmt(p.downloadedSec)}`);
-  else if (p.downloadedBytes != null) parts.push(`다운로드 ${mb(p.downloadedBytes)}${p.totalBytes ? `/${mb(p.totalBytes)}` : ''}`);
-  else parts.push('영상 정보 불러오는 중…');
-  if (total) parts.push(`변환 ${fmt(p.transcribedSec || 0)} / ${fmt(total)}`);
+  if (p.downloadedSec != null && total) parts.push(t('progExtract', { t: fmt(p.downloadedSec) }));
+  else if (p.downloadedBytes != null) parts.push(t('progDownload', { a: mb(p.downloadedBytes), b: p.totalBytes ? `/${mb(p.totalBytes)}` : '' }));
+  else parts.push(t('progLoading'));
+  if (total) parts.push(t('progTranscribe', { a: fmt(p.transcribedSec || 0), b: fmt(total) }));
   return parts.join(' · ');
 }
 
@@ -119,7 +127,7 @@ function jobCard(job, format = 'txt') {
   title.textContent = job.title || job.url;
   const badge = document.createElement('span');
   badge.className = `job-badge ${job.state}`;
-  badge.textContent = job.state === 'working' && total ? `${Math.floor(tx * 100)}%` : JOB_LABEL[job.state];
+  badge.textContent = job.state === 'working' && total ? `${Math.floor(tx * 100)}%` : t(JOB_LABEL[job.state]);
   top.append(title, badge);
   card.append(top);
 
@@ -152,16 +160,16 @@ function jobCard(job, format = 'txt') {
   };
   const count = document.createElement('span');
   count.className = 'job-count';
-  count.textContent = job.count ? `${job.count}문장` : '';
+  count.textContent = job.count ? t('lines', { n: job.count }) : '';
   actions.append(count);
   if (job.count) {
-    btn('복사', (b) => copyJob(job, b));
+    btn(t('copy'), (b) => copyJob(job, b));
     btn(`.${FORMATS[format].ext}`, () => downloadJobs([job]));
   }
-  if (job.state === 'working' || job.state === 'queued') btn('중지', () => send('cancel-job', { jobId: job.id }));
-  if ((job.state === 'error' || job.state === 'canceled') && job.source) btn('다시', () => send('retry-job', { jobId: job.id }));
-  btn('삭제', () => {
-    if (job.count && !confirm(`"${job.title}" 스크립트를 지울까요?`)) return;
+  if (job.state === 'working' || job.state === 'queued') btn(t('stop'), () => send('cancel-job', { jobId: job.id }));
+  if ((job.state === 'error' || job.state === 'canceled') && job.source) btn(t('retry'), () => send('retry-job', { jobId: job.id }));
+  btn(t('remove'), () => {
+    if (job.count && !confirm(t('confirmRemove', { title: job.title }))) return;
     if (selectedId === job.id) selectedId = null;
     send('remove-job', { jobId: job.id });
   }, 'danger');
@@ -177,19 +185,23 @@ async function render(data) {
   const working = jobs.filter((j) => j.state === 'working').length;
   const queued = jobs.filter((j) => j.state === 'queued').length;
 
-  $('state').textContent = picking ? '영상 선택 중' : working ? `변환 중 ${working}${queued ? ` · 대기 ${queued}` : ''}` : '대기';
+  $('state').textContent = picking
+    ? t('statePicking')
+    : working
+      ? t('stateWorking', { n: working }) + (queued ? t('stateQueued', { n: queued }) : '')
+      : t('stateIdle');
   $('state').classList.toggle('recording', !!working);
   $('pick').hidden = picking;
   $('targetRow').hidden = picking;
   $('pickStop').hidden = !picking;
   const format = FORMATS[data.settings?.exportFormat] ? data.settings.exportFormat : 'txt';
   $('hint').textContent = picking
-    ? '강의 창에서 영상 위를 클릭하세요. (Esc로 취소)'
+    ? t('hintPicking')
     : targetIsYouTube()
-      ? '유튜브는 영상을 한 번 재생(클릭)한 뒤 + 강의 추가를 누르세요. 자막을 바로 가져오니 API 키도 필요 없어요.'
+      ? t('hintYoutube')
       : jobs.length
-        ? '추가하면 바로 오디오를 받아 두니 강의 창은 닫아도 돼요. 변환은 2개씩 차례로 진행돼요.'
-        : '창을 고르고 + 강의 추가를 누른 뒤, 그 창에서 영상을 클릭하세요.';
+        ? t('hintJobs')
+        : t('hintEmpty');
   $('error').hidden = !status.error;
   $('error').textContent = status.error || '';
 
@@ -199,7 +211,7 @@ async function render(data) {
     selectedId = (ordered.find((j) => j.state === 'working') || ordered[0])?.id ?? null;
   }
   $('jobs').replaceChildren(...ordered.map((j) => jobCard(j, format)));
-  $('downloadAll').textContent = `완료된 강의 모두 .${FORMATS[format].ext} 다운로드`;
+  $('downloadAll').textContent = t('downloadAll', { ext: FORMATS[format].ext });
 
   // 선택한 강의 미리보기 (목록 바로 아래)
   const job = jobs.find((j) => j.id === selectedId);
@@ -207,10 +219,10 @@ async function render(data) {
   if (job) {
     const { [`seg:${job.id}`]: segs = [] } = await chrome.storage.local.get(`seg:${job.id}`);
     $('title').textContent = job.title || '';
-    $('count').textContent = segs.length ? `${segs.length}문장` : '';
+    $('count').textContent = segs.length ? t('lines', { n: segs.length }) : '';
     const pre = $('preview');
     const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
-    pre.textContent = segs.length ? toLines(segs).join('\n') : '아직 스크립트가 없습니다.';
+    pre.textContent = segs.length ? toLines(segs).join('\n') : t('noScript');
     if (atBottom) pre.scrollTop = pre.scrollHeight;
   }
   $('downloadAll').disabled = !jobs.some((j) => j.state === 'done' && j.count);
@@ -249,7 +261,7 @@ async function copyJob(job, button) {
   if (!text) return;
   await navigator.clipboard.writeText(text);
   const label = button.textContent;
-  button.textContent = '복사됨';
+  button.textContent = t('copied');
   setTimeout(() => (button.textContent = label), 1200);
 }
 
@@ -261,7 +273,7 @@ const FREE_LIMITS = {
 
 const hm = (sec) => {
   const m = Math.round(sec / 60);
-  return m >= 60 ? `${Math.floor(m / 60)}시간 ${m % 60}분` : `${m}분`;
+  return m >= 60 ? `${Math.floor(m / 60)}${t('unitH')}${m % 60}${t('unitM')}` : `${m}${t('unitM')}`;
 };
 
 // 3:05 형식 (칸이 좁은 표 안에서 사용)
@@ -270,7 +282,7 @@ const hmm = (sec) => {
   return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
 };
 
-const timeOf = (ms) => new Date(ms).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+const timeOf = (ms) => new Date(ms).toLocaleTimeString(t('locale'), { hour: '2-digit', minute: '2-digit' });
 
 function renderUsage(usage, settings) {
   const box = $('usage');
@@ -296,23 +308,23 @@ function renderUsage(usage, settings) {
       const until = usage?.blocked?.[`${key}:${model}`] ?? (key === tails[0] ? usage?.blocked?.[model] : null);
       const blocked = until > now;
       const pct = Math.min(100, (100 * day) / lim.day);
-      const title = `최근 1시간 ${hm(hour)} / ${hm(lim.hour)}\n최근 24시간 ${hm(day)} / ${hm(lim.day)}`;
+      const title = t('usageTitle', { a: hm(hour), b: hm(lim.hour), c: hm(day), d: hm(lim.day) });
       return `<div class="cell${blocked ? ' blocked' : ''}" title="${title}">
         <div class="meter"><i style="width:${pct}%"></i></div>
-        <span class="t">${blocked ? `한도 · ${timeOf(until)} 해제` : `${hmm(day)} / ${hmm(lim.day)}`}</span>
+        <span class="t">${blocked ? t('usageBlocked', { t: timeOf(until) }) : `${hmm(day)} / ${hmm(lim.day)}`}</span>
       </div>`;
     });
     return `<span class="key">…${key}</span>${row.join('')}`;
   });
 
   box.innerHTML = `
-    <div class="usage-head"><span>남은 무료 사용량 · 키 ${tails.length}개</span><b>약 ${hm(total - used)}</b></div>
+    <div class="usage-head"><span>${t('usageHead', { n: tails.length })}</span><b>${t('usageAbout', { t: hm(total - used) })}</b></div>
     <div class="meter usage-total"><i style="width:${(100 * used) / total}%"></i></div>
     <div class="usage-grid">
       <span class="th"></span><span class="th">large-v3</span><span class="th">turbo</span>
       ${cells.join('')}
     </div>
-    <div class="note">최근 24시간 사용량 (추정). 마우스를 올리면 1시간 사용량이 보여요. 실제 사용량은 <a href="https://console.groq.com/dashboard/usage" target="_blank">Groq Usage</a>.</div>`;
+    <div class="note">${t('usageNote')} <a href="https://console.groq.com/dashboard/usage" target="_blank">Groq Usage</a>.</div>`;
   box.hidden = false;
 }
 
@@ -342,7 +354,7 @@ async function loadTargets() {
     ...items.map(({ t, isPopup }) => {
       const o = document.createElement('option');
       o.value = t.id;
-      o.textContent = `${isPopup ? '[새 창] ' : t.id === current?.id ? '[현재 탭] ' : ''}${t.title || t.url}`;
+      o.textContent = `${isPopup ? tr('targetNew') : t.id === current?.id ? tr('targetCurrent') : ''}${t.title || t.url}`;
       return o;
     })
   );
@@ -351,9 +363,11 @@ async function loadTargets() {
 }
 
 async function init() {
+  await loadLang();
+  applyI18n();
   loadTargets();
   let { settings = {} } = await chrome.storage.local.get('settings');
-  settings = { provider: 'groq', apiKeys: {}, language: 'ko', ...settings };
+  settings = { provider: 'groq', apiKeys: {}, language: 'ko', uiLanguage: 'auto', ...settings };
   if (settings.apiKey) {
     // v0.1에서 저장한 OpenAI 키 옮기기
     settings.apiKeys.openai ||= settings.apiKey;
@@ -384,7 +398,7 @@ async function init() {
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = '−';
-    remove.title = '이 키 삭제';
+    remove.title = t('removeKey');
     remove.addEventListener('click', () => {
       row.remove();
       if (!$('keyList').children.length) addKeyRow();
@@ -407,7 +421,7 @@ async function init() {
   const showProvider = () => {
     const p = PROVIDERS[settings.provider];
     $('provider').value = settings.provider;
-    $('keyLabel').textContent = p.label;
+    $('keyLabel').textContent = t(p.label);
     $('keyLink').href = p.link;
     renderKeys();
   };
@@ -425,10 +439,33 @@ async function init() {
     save();
   });
 
+  // 인터페이스 언어: 바꾸면 바로 적용한다
+  const fillLanguageSelects = () => {
+    $('uiLanguage').replaceChildren(
+      Object.assign(document.createElement('option'), { value: 'auto', textContent: t('uiAuto') }),
+      ...Object.entries(LANGUAGES).map(([value, textContent]) => Object.assign(document.createElement('option'), { value, textContent }))
+    );
+    $('uiLanguage').value = settings.uiLanguage;
+    const current = $('format').value;
+    $('format').replaceChildren(
+      ...Object.entries(FORMATS).map(([value, { label }]) => Object.assign(document.createElement('option'), { value, textContent: t(label) }))
+    );
+    $('format').value = current || (FORMATS[settings.exportFormat] ? settings.exportFormat : 'txt');
+    $('keyLabel').textContent = t(PROVIDERS[settings.provider].label);
+    $('keyList').querySelectorAll('.key-row button').forEach((b) => (b.title = t('removeKey')));
+  };
+  $('uiLanguage').addEventListener('change', async () => {
+    settings.uiLanguage = $('uiLanguage').value;
+    await save();
+    setLang(settings.uiLanguage);
+    applyI18n();
+    fillLanguageSelects();
+    loadTargets();
+    refresh();
+  });
+
   // 내보내기 설정
-  $('format').replaceChildren(
-    ...Object.entries(FORMATS).map(([value, { label }]) => Object.assign(document.createElement('option'), { value, textContent: label }))
-  );
+  fillLanguageSelects();
   $('format').value = FORMATS[settings.exportFormat] ? settings.exportFormat : 'txt';
   $('merge').checked = !!settings.exportMerge;
   $('bundleName').value = settings.exportName || '';
@@ -470,19 +507,19 @@ async function init() {
     const tab = await chrome.tabs.get(Number($('target').value)).catch(() => null);
     if (!tab) {
       $('error').hidden = false;
-      $('error').textContent = '선택한 창이 닫혔습니다. 다시 골라 주세요.';
+      $('error').textContent = t('windowClosed');
       loadTargets();
       $('pick').disabled = false;
       return;
     }
     const youtube = targetIsYouTube();
-    if (youtube) $('pick').textContent = '자막 가져오는 중…';
+    if (youtube) $('pick').textContent = t('fetchingCaptions');
     const res = await send('pick', { tabId: tab.id });
     $('pick').disabled = false;
-    $('pick').textContent = '+ 강의 추가';
+    $('pick').textContent = t('add');
     if (!res?.ok) {
       $('error').hidden = false;
-      $('error').textContent = res?.error || '시작하지 못했습니다.';
+      $('error').textContent = res?.error || t('startFailed');
       return;
     }
     // 유튜브는 자막을 바로 가져와 목록에 추가되므로 창을 옮기지 않는다

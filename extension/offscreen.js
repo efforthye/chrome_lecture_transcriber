@@ -25,7 +25,7 @@ const toBackground = (type, extra = {}) => chrome.runtime.sendMessage({ type, ..
 
 async function get(url, signal) {
   const res = await fetch(url, { credentials: 'include', signal });
-  if (!res.ok) throw new Error(`다운로드 실패 (${res.status}): ${url.slice(0, 120)}`);
+  if (!res.ok) throw new Error(t('dlFailed', { status: res.status, url: url.slice(0, 120) }));
   return res;
 }
 
@@ -177,7 +177,7 @@ async function loadMediaPlaylist(url, signal) {
       });
       next = best?.uri;
     }
-    if (!next) throw new Error('HLS 재생목록에서 영상 트랙을 찾지 못했습니다.');
+    if (!next) throw new Error(t('hlsNoTrack'));
     url = new URL(next, url).href;
     text = await (await get(url, signal)).text();
   }
@@ -195,14 +195,14 @@ async function loadMediaPlaylist(url, signal) {
       const method = attr(line, 'METHOD');
       if (method === 'NONE') key = null;
       else if (method === 'AES-128') key = { uri: new URL(attr(line, 'URI'), url).href, iv: attr(line, 'IV') };
-      else throw new Error(`지원하지 않는 암호화 방식입니다 (${method}).`);
+      else throw new Error(t('hlsBadCrypt', { method }));
     } else if (line.startsWith('#EXT-X-MAP:')) map = new URL(attr(line, 'URI'), url).href;
     else if (line.startsWith('#EXTINF:')) dur = parseFloat(line.slice(8));
     else if (!line.startsWith('#')) {
       segments.push({ url: new URL(line, url).href, dur, key, seq: seq++ });
     }
   }
-  if (!segments.length) throw new Error('HLS 재생목록이 비어 있습니다.');
+  if (!segments.length) throw new Error(t('hlsEmpty'));
   return { segments, map };
 }
 
@@ -333,15 +333,15 @@ async function transcribe(chunk, { provider, apiKeys, language }, signal, job) {
   let slot = null;
   let failures = 0;
   for (;;) {
-    if (apiKeys.every((k) => deadKeys.has(k))) throw new Error('등록된 API 키가 모두 유효하지 않습니다. 설정에서 키를 확인해 주세요.');
+    if (apiKeys.every((k) => deadKeys.has(k))) throw new Error(t('allKeysDead'));
     // 한도에 안 걸린 조합 중 앞쪽 것을 쓰고, 전부 걸렸으면 가장 먼저 풀리는 조합을 기다린다
     const now = Date.now();
     const usable = slots.filter((s) => !deadKeys.has(s.key));
     slot = usable.find((s) => (blockedUntil.get(s.id) || 0) <= now);
     if (!slot) {
       const next = Math.min(...usable.map((s) => blockedUntil.get(s.id)));
-      const until = new Date(next).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-      toBackground('notice', { jobId: job.id, message: `모든 키가 무료 사용 한도에 걸려 기다리는 중… ${until}쯤 이어서 변환합니다.` });
+      const until = new Date(next).toLocaleTimeString(t('locale'), { hour: '2-digit', minute: '2-digit' });
+      toBackground('notice', { jobId: job.id, message: t('allKeysLimited', { t: until }) });
       await sleep(Math.max(1, (next - now) / 1000), signal);
       continue;
     }
@@ -356,8 +356,8 @@ async function transcribe(chunk, { provider, apiKeys, language }, signal, job) {
     if (job.prevText) form.append('prompt', job.prevText.slice(-200));
 
     try {
-      const who = apiKeys.length > 1 ? ` · 키 …${keyTail(slot.key)}` : '';
-      toBackground('notice', { jobId: job.id, message: `${clock(chunk.start)}부터 5분 분량 변환 중… (${slot.model}${who})` });
+      const who = apiKeys.length > 1 ? t('keyTail', { k: keyTail(slot.key) }) : '';
+      toBackground('notice', { jobId: job.id, message: t('transcribing', { t: clock(chunk.start), model: slot.model, who }) });
       res = await fetch(url, {
         method: 'POST',
         headers: { Authorization: `Bearer ${slot.key}` },
@@ -375,19 +375,19 @@ async function transcribe(chunk, { provider, apiKeys, language }, signal, job) {
     } else if (res?.status === 401 || res?.status === 403) {
       // 잘못된 키는 빼고 나머지 키로 계속한다
       deadKeys.add(slot.key);
-      toBackground('error', { message: `키 …${keyTail(slot.key)}가 유효하지 않아 건너뜁니다 (${res.status}).` });
+      toBackground('error', { message: t('keyInvalid', { k: keyTail(slot.key), status: res.status }) });
     } else if (!res || res.status >= 500) {
       if (++failures >= 6) break;
-      toBackground('notice', { jobId: job.id, message: `서버 응답이 없어 다시 시도 중… (${failures}/5)` });
+      toBackground('notice', { jobId: job.id, message: t('serverRetry', { n: failures }) });
       await sleep(5 * failures, signal);
     } else break;
   }
   const model = slot.model;
   toBackground('notice', { jobId: job.id, message: null });
-  if (!res) throw new Error('음성인식 API에 연결하지 못했습니다.');
+  if (!res) throw new Error(t('apiConnect'));
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(`음성인식 API 오류 (${res.status}): ${body.error?.message || res.statusText}`);
+    throw new Error(t('apiError', { status: res.status, msg: body.error?.message || res.statusText }));
   }
   toBackground('usage', { provider, model, key: keyTail(slot.key), sec: chunk.sec });
 
@@ -444,6 +444,7 @@ const requestGate = new Gate(2);
 
 // 강의 하나를 처리한다. 여러 개가 동시에 돌 수 있고, 메시지마다 jobId를 붙여 보낸다.
 async function run({ jobId, order = Date.now(), source, settings }) {
+  setLang(settings.uiLanguage);
   const controller = new AbortController();
   controllers.set(jobId, controller);
   const { signal } = controller;
@@ -480,7 +481,7 @@ async function run({ jobId, order = Date.now(), source, settings }) {
   const producer = (async () => {
     let acquired = false;
     try {
-      await downloadGate.acquire(order, signal, () => notice('다른 강의 다운로드가 끝나길 기다리는 중…'));
+      await downloadGate.acquire(order, signal, () => notice(t('waitDownload')));
       acquired = true;
       notice(null);
       if (source.kind === 'hls') await produceHls(source.url, signal, chunker, progress);
@@ -500,7 +501,7 @@ async function run({ jobId, order = Date.now(), source, settings }) {
       if (!queue.length) return;
       const chunk = queue.shift();
       notify();
-      await requestGate.acquire(order, signal, () => notice('오디오 받아 두는 중 · 앞 강의 변환이 끝나면 이어서 변환해요'));
+      await requestGate.acquire(order, signal, () => notice(t('waitTranscribe')));
       let segments;
       try {
         segments = await transcribe(chunk, settings, signal, job);

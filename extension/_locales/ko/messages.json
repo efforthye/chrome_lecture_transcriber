@@ -1,0 +1,5 @@
+{
+  "extDescription": { "message": "강의 영상을 클릭하면 오디오를 받아 Whisper로 타임스탬프 스크립트(.txt)를 만들고, 유튜브는 자막을 바로 가져옵니다." },
+  "actionTitle": { "message": "Lecture Transcriber" },
+  "commandDesc": { "message": "현재 탭에서 영상 선택해서 스크립트 만들기" }
+}

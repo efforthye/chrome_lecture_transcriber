@@ -7,36 +7,39 @@
 <body>
   <header>
     <h1>Lecture Transcriber</h1>
-    <span id="state" class="state">대기</span>
+    <span id="state" class="state"></span>
   </header>
 
   <details id="settings">
-    <summary>키 설정</summary>
-    <label>음성인식 서비스
+    <summary data-i18n="keySettings"></summary>
+    <label><span data-i18n="provider"></span>
       <select id="provider">
-        <option value="groq">Groq (무료)</option>
-        <option value="openai">OpenAI (유료, 분당 $0.006)</option>
+        <option value="groq" data-i18n="providerGroq"></option>
+        <option value="openai" data-i18n="providerOpenai"></option>
       </select>
     </label>
-    <div class="field"><span id="keyLabel">API 키</span> · <a id="keyLink" target="_blank">발급받기</a>
+    <div class="field"><span id="keyLabel"></span> · <a id="keyLink" target="_blank" data-i18n="getKey"></a>
       <div id="keyList"></div>
-      <button id="addKey" type="button" class="add">+ 키 추가</button>
+      <button id="addKey" type="button" class="add" data-i18n="addKey"></button>
     </div>
-    <label>언어
+    <label><span data-i18n="audioLanguage"></span>
       <select id="language">
-        <option value="ko">한국어</option>
-        <option value="en">영어</option>
-        <option value="auto">자동 감지</option>
+        <option value="ko" data-i18n="langKo"></option>
+        <option value="en" data-i18n="langEn"></option>
+        <option value="auto" data-i18n="langAuto"></option>
       </select>
+    </label>
+    <label><span data-i18n="uiLanguage"></span>
+      <select id="uiLanguage"></select>
     </label>
   </details>
 
-  <label id="targetRow">영상이 있는 창
+  <label id="targetRow"><span data-i18n="targetLabel"></span>
     <select id="target"></select>
   </label>
   <div class="actions" style="margin-top:8px">
-    <button id="pick" class="primary">+ 강의 추가</button>
-    <button id="pickStop" hidden>선택 취소</button>
+    <button id="pick" class="primary" data-i18n="add"></button>
+    <button id="pickStop" hidden data-i18n="cancelPick"></button>
   </div>
   <p id="hint" class="hint"></p>
   <p id="error" class="error" hidden></p>
@@ -46,27 +49,28 @@
   <div id="jobs" class="jobs"></div>
 
   <section id="previewBox" hidden>
-    <div class="meta"><span id="title"></span><span id="count"></span><button id="copyPreview" type="button" class="mini">복사</button></div>
+    <div class="meta"><span id="title"></span><span id="count"></span><button id="copyPreview" type="button" class="mini" data-i18n="copy"></button></div>
     <pre id="preview"></pre>
   </section>
 
   <details id="exportBox" class="export">
-    <summary>내보내기 설정</summary>
-    <label>형식
+    <summary data-i18n="exportSettings"></summary>
+    <label><span data-i18n="format"></span>
       <select id="format"></select>
     </label>
-    <label class="check"><input type="checkbox" id="merge" /> 완료된 강의를 하나의 파일로 합치기</label>
-    <p id="mergeNote" class="note" hidden>자막 형식(.srt/.vtt)은 강의마다 시간이 0부터 시작해서 합칠 수 없어요.</p>
-    <label id="bundleRow" hidden>합친 파일 이름
+    <label class="check"><input type="checkbox" id="merge" /> <span data-i18n="merge"></span></label>
+    <p id="mergeNote" class="note" hidden data-i18n="mergeNote"></p>
+    <label id="bundleRow" hidden><span data-i18n="bundleName"></span>
       <input id="bundleName" placeholder="transcripts" autocomplete="off" />
     </label>
-    <label class="check"><input type="checkbox" id="askWhere" /> 저장할 때마다 위치·이름 묻기</label>
+    <label class="check"><input type="checkbox" id="askWhere" /> <span data-i18n="askWhere"></span></label>
   </details>
 
   <div class="actions">
-    <button id="downloadAll" disabled>완료된 강의 모두 .txt 다운로드</button>
+    <button id="downloadAll" disabled></button>
   </div>
 
+  <script src="i18n.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

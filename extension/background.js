@@ -6,6 +6,8 @@
 //            state: 'queued' | 'working' | 'done' | 'error' | 'canceled'
 //   seg:<id> 그 강의의 문장 목록 [{ start, end, text }]
 
+importScripts('i18n.js');
+
 const OFFSCREEN_URL = 'offscreen.html';
 const REFERER_RULE_ID = 1;
 const MAX_PARALLEL = 30; // 추가하자마자 바로 시작한다. 실제 동시 다운로드/변환 수는 오프스크린이 조절한다
@@ -57,7 +59,8 @@ async function updateBadge(status, jobs) {
   let text = left ? String(left) : '';
   let color = '#d97706';
   if (status.state === 'picking') {
-    text = '선택';
+    await loadLang();
+    text = t('badgePick');
     color = '#2563eb';
   }
   await chrome.action.setBadgeText({ text });
@@ -69,7 +72,7 @@ async function getSettings() {
   const provider = settings.provider || 'groq';
   // 키는 여러 개 넣을 수 있다 (줄바꿈으로 구분해 저장)
   const apiKeys = [...new Set((settings.apiKeys?.[provider] || '').split(/[\s,]+/).filter(Boolean))];
-  return { provider, apiKeys, language: settings.language || 'ko' };
+  return { provider, apiKeys, language: settings.language || 'ko', uiLanguage: settings.uiLanguage || 'auto' };
 }
 
 // ---------- 오프스크린 문서 ----------
@@ -82,11 +85,12 @@ async function hasOffscreen() {
 let creating = null;
 async function ensureOffscreen() {
   if (await hasOffscreen()) return;
+  await loadLang();
   creating ??= chrome.offscreen
     .createDocument({
       url: OFFSCREEN_URL,
       reasons: ['BLOBS'],
-      justification: '강의 영상의 오디오를 내려받아 디코딩하고 음성인식 API로 보냅니다.',
+      justification: t('offscreenWhy'),
     })
     .finally(() => (creating = null));
   await creating;
@@ -279,16 +283,17 @@ async function fetchYouTubeCaptions(lang) {
 }
 
 const YT_ERRORS = {
-  'not-video': '유튜브 영상 페이지(youtube.com/watch…)를 연 탭에서 시도해 주세요.',
-  live: '라이브 방송은 지원하지 않습니다. 방송이 끝난 뒤 다시 시도해 주세요.',
-  unavailable: '유튜브에서 재생할 수 없는 영상입니다 (비공개·멤버십·연령 제한 등).',
-  'no-captions': '이 영상에는 자막이 없어서 스크립트를 만들 수 없습니다.',
-  'not-ready': '영상 정보를 아직 불러오지 못했습니다. 영상을 한 번 재생(클릭)한 뒤 다시 시도해 주세요.',
-  blocked: '자막을 가져오지 못했습니다. 유튜브가 요청을 막은 것 같습니다. 영상을 한 번 재생한 뒤 잠시 후 다시 시도해 주세요.',
+  'not-video': 'ytNotVideo',
+  live: 'ytLive',
+  unavailable: 'ytUnavailable',
+  'no-captions': 'ytNoCaptions',
+  'not-ready': 'ytNotReady',
+  blocked: 'ytBlocked',
 };
 
 async function onYouTubePicked(tab) {
   const settings = await getSettings();
+  await loadLang();
   // 일시적으로 막히거나 아직 준비 전이면 잠깐 기다렸다가 한 번 더 시도한다
   let result;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -302,7 +307,7 @@ async function onYouTubePicked(tab) {
     await new Promise((r) => setTimeout(r, 2500));
   }
   if (!result || result.code) {
-    const base = YT_ERRORS[result?.code] || '자막을 가져오지 못했습니다.';
+    const base = t(YT_ERRORS[result?.code] || 'ytFailed');
     throw new Error(result?.detail ? `${base} (${result.detail})` : base);
   }
 
@@ -326,11 +331,12 @@ async function onYouTubePicked(tab) {
   if (duplicate) await chrome.storage.local.remove(`seg:${id}`);
   await setStatus({
     state: 'idle',
-    error: duplicate ? `"${duplicate.title}"은(는) 이미 목록에 있습니다.` : null,
+    error: duplicate ? t('duplicate', { title: duplicate.title }) : null,
   });
 }
 
 async function startPick(tabId) {
+  await loadLang();
   const tab = await chrome.tabs.get(tabId);
   if (isYouTube(tab.url)) {
     // 유튜브는 자막을 바로 가져오므로 API 키도, 영상 클릭도 필요 없다
@@ -344,11 +350,11 @@ async function startPick(tabId) {
     return;
   }
   const settings = await getSettings();
-  if (!settings.apiKeys.length) throw new Error('키 설정에서 API 키를 먼저 입력해 주세요.');
+  if (!settings.apiKeys.length) throw new Error(t('needKey'));
   // 모든 프레임(iframe 포함)에 영상 선택 스크립트 주입
   await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, files: ['content.js'] });
   await setStatus({ state: 'picking', tabId, error: null });
-  await chrome.tabs.sendMessage(tabId, { type: 'pick-start' });
+  await chrome.tabs.sendMessage(tabId, { type: 'pick-start', text: t('overlay') });
 }
 
 async function cancelPick() {
@@ -360,7 +366,8 @@ async function cancelPick() {
 async function onPicked(tab, { source, frameUrl, duration }) {
   chrome.tabs.sendMessage(tab.id, { type: 'pick-end' }).catch(() => {});
   if (!source) {
-    await setStatus({ state: 'idle', error: '영상 주소를 찾지 못했습니다. 영상을 한 번 재생한 뒤 다시 시도해 주세요.' });
+    await loadLang();
+    await setStatus({ state: 'idle', error: t('srcNotFound') });
     return;
   }
   const duplicate = await updateJobs((jobs) => {
@@ -380,7 +387,7 @@ async function onPicked(tab, { source, frameUrl, duration }) {
   });
   await setStatus({
     state: 'idle',
-    error: duplicate ? `"${duplicate.title}"은(는) 이미 목록에 있습니다.` : null,
+    error: duplicate ? t('duplicate', { title: duplicate.title }) : null,
   });
   schedule();
 }
@@ -569,11 +576,20 @@ async function migrate() {
 }
 
 chrome.runtime.onStartup.addListener(recover);
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   recover();
+  await loadLang();
   chrome.contextMenus.create({
     id: 'start-pick',
-    title: '이 페이지 영상 스크립트 만들기',
+    title: t('menuTitle'),
     contexts: ['page', 'frame', 'video', 'selection', 'link', 'image'],
   });
+});
+
+// 인터페이스 언어를 바꾸면 우클릭 메뉴 이름도 바꾼다
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== 'local' || !changes.settings) return;
+  if (changes.settings.oldValue?.uiLanguage === changes.settings.newValue?.uiLanguage) return;
+  await loadLang();
+  chrome.contextMenus.update('start-pick', { title: t('menuTitle') }).catch(() => {});
 });

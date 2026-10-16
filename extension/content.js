@@ -5,6 +5,7 @@
 
   let picking = false;
   let overlay = null;
+  let overlayText = 'Click to create a transcript of this video (Esc to cancel)'; // 실제 문구는 pick-start 메시지로 받는다
 
   function videoAt(x, y) {
     for (const el of document.elementsFromPoint(x, y)) {
@@ -56,7 +57,7 @@
         color: '#fff',
         textShadow: '0 1px 3px rgba(0,0,0,.7)',
       });
-      overlay.textContent = '클릭해서 이 영상 스크립트 만들기 (Esc 취소)';
+      overlay.textContent = overlayText;
       document.documentElement.appendChild(overlay);
     }
     const r = target.getBoundingClientRect();
@@ -126,7 +127,10 @@
   }
 
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'pick-start') startPicking();
+    if (msg.type === 'pick-start') {
+      if (msg.text) overlayText = msg.text;
+      startPicking();
+    }
     else if (msg.type === 'pick-end') stopPicking();
   });
 })();

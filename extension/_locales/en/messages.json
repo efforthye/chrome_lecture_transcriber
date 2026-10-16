@@ -1,0 +1,5 @@
+{
+  "extDescription": { "message": "Click a lecture video to download its audio and transcribe it with Whisper into a timestamped transcript. On YouTube, existing captions are fetched instantly." },
+  "actionTitle": { "message": "Lecture Transcriber" },
+  "commandDesc": { "message": "Pick a video in the current tab and create a transcript" }
+}
